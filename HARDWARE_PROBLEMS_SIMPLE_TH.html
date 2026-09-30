@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <title>สรุปปัญหาฮาร์ดแวร์แบบเข้าใจง่าย</title>
+  <style>
+    @page { size: A4; margin: 14mm; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: "Leelawadee UI", Tahoma, sans-serif; color: #172033; font-size: 11pt; line-height: 1.55; }
+    h1 { color: #174ea6; font-size: 23pt; margin: 0 0 6px; }
+    h2 { font-size: 15pt; color: #174ea6; margin: 20px 0 8px; border-bottom: 2px solid #dbe7ff; padding-bottom: 4px; break-after: avoid; }
+    p { margin: 4px 0 8px; }
+    ol, ul { margin: 5px 0 10px 22px; padding: 0; }
+    li { margin-bottom: 5px; }
+    .intro { color: #526174; margin-bottom: 18px; }
+    .item { border: 1px solid #d9e1ee; border-radius: 8px; padding: 11px 13px; margin: 0 0 12px; break-inside: avoid; }
+    .label { display: inline-block; min-width: 74px; font-weight: 700; color: #153d78; }
+    .problem { color: #b42318; font-weight: 700; }
+    .pass { color: #087a43; font-weight: 700; }
+    .pending { color: #ad5700; font-weight: 700; }
+    code, pre { font-family: Consolas, "Courier New", monospace; background: #f3f6fa; }
+    code { padding: 1px 4px; border-radius: 3px; }
+    pre { margin: 7px 0; padding: 8px 10px; border-left: 4px solid #3b82f6; white-space: pre-wrap; font-size: 9.5pt; }
+    table { width: 100%; border-collapse: collapse; margin: 8px 0 14px; break-inside: avoid; }
+    th, td { border: 1px solid #ccd6e5; padding: 7px; text-align: left; vertical-align: top; }
+    th { background: #eaf1ff; color: #153d78; }
+    .warning { background: #fff7dc; border-left: 4px solid #efa600; padding: 8px 10px; margin: 10px 0; }
+    .page-break { page-break-before: always; }
+    .footer { margin-top: 18px; color: #64748b; font-size: 9pt; }
+  </style>
+</head>
+<body>
+  <h1>สรุปปัญหาฮาร์ดแวร์แบบเข้าใจง่าย</h1>
+  <p class="intro">โครงการเครื่องชั่งคลินิก ESP32-S3 — ข้อมูล ณ วันที่ 27 กันยายน 2569</p>
+
+  <h2>ข้อ 1: HX711 แสดงค่า −8388608 ตลอด</h2>
+  <div class="item">
+    <p><span class="label">ปัญหา:</span> ค่า RAW ไม่เปลี่ยนและค้างที่ <code>−8388608</code></p>
+    <p><span class="label">สาเหตุ:</span> ต่อคู่สาย Load Cell ผิด ทำให้สัญญาณ A+ และ A− ต่างกันมากเกินไป</p>
+    <p><span class="label">วิธีแก้:</span> เปลี่ยนการต่อสายเป็น</p>
+    <pre>ดำ → E+    ขาว → E−
+แดง → A+   เขียว → A−</pre>
+    <p><span class="label">ผลทดสอบ:</span> ค่า RAW เปลี่ยนเมื่อกด และกลับมาใกล้ค่าเดิมเมื่อปล่อย</p>
+    <p><span class="label">สถานะ:</span> <span class="pass">ผ่านแล้ว</span></p>
+  </div>
+
+  <h2>ข้อ 2: Load Cell ยังอ่านเป็นกิโลกรัมไม่ได้</h2>
+  <div class="item">
+    <p><span class="label">ปัญหา:</span> อ่านค่า RAW ได้ แต่ยังไม่ใช่หน่วยกิโลกรัม</p>
+    <p><span class="label">สาเหตุ:</span> ยังไม่ได้ Tare และ Calibration ด้วยน้ำหนักมาตรฐาน</p>
+    <p><span class="label">วิธีแก้:</span></p>
+    <ol>
+      <li>เอาของออกจากแท่นแล้วตั้งศูนย์</li>
+      <li>วางตุ้มน้ำหนักที่ทราบค่าจริง</li>
+      <li>คำนวณและใส่ค่า <code>CALIBRATION_FACTOR</code></li>
+      <li>ทดสอบซ้ำอย่างน้อย 3 น้ำหนัก</li>
+    </ol>
+    <p><span class="label">สถานะ:</span> <span class="pending">รอคาลิเบรต</span></p>
+  </div>
+
+  <h2>ข้อ 3: ESP32 ไม่พบคีย์แพด PCF8574</h2>
+  <div class="item">
+    <p><span class="label">ปัญหา:</span></p>
+    <pre>[KEYPAD] ERROR: PCF8574 not found</pre>
+    <p><span class="label">ผลตรวจ:</span> <code>SDA=HIGH</code> แต่ <code>SCL=LOW</code></p>
+    <p><span class="label">สาเหตุ:</span> สาย SCL ถูกต่อถึง GND, หัวต่อกลับด้าน, ลำดับขาไม่ตรงกัน หรือมีจุดลัดวงจร</p>
+    <p><span class="label">วิธีแก้:</span> ปิดไฟแล้วต่อใหม่ตามชื่อขา</p>
+    <pre>PCF8574 VCC → 3.3V
+PCF8574 GND → GND
+PCF8574 SDA → GPIO8
+PCF8574 SCL → GPIO9</pre>
+    <p><span class="label">สถานะ:</span> <span class="pending">ยังไม่ผ่าน ต้องแก้ SCL LOW</span></p>
+  </div>
+
+  <h2>ข้อ 4: หัวต่อ PCB กับ PCF8574 อาจเรียงไม่เหมือนกัน</h2>
+  <div class="item">
+    <p><span class="label">ปัญหา:</span> หากเสียบสายตรงตามตำแหน่ง อาจทำให้ VCC, GND, SDA และ SCL สลับกัน</p>
+    <p><span class="label">วิธีแก้:</span> ดูชื่อขา ไม่ดูแค่ตำแหน่งหัวต่อ</p>
+    <pre>Z4-1 → GND
+Z4-2 → 3.3V
+Z4-3 → SDA / GPIO8
+Z4-4 → SCL / GPIO9</pre>
+    <p>ใช้สายไขว้หากตำแหน่งขาบนโมดูลไม่ตรงกับ Z4</p>
+  </div>
+
+  <div class="page-break"></div>
+  <h2>ข้อ 5: Address ของคีย์แพดอาจชนกับ LCD</h2>
+  <div class="item">
+    <p><span class="label">ปัญหา:</span> LCD ใช้ <code>0x27</code> หากคีย์แพดใช้ address เดียวกัน ทั้งสองตัวจะทำงานผิดปกติ</p>
+    <p><span class="label">วิธีแก้:</span> ตั้ง Jumper A0/A1/A2 ของ PCF8574 ให้เป็น LOW ทั้งหมด เพื่อใช้ <code>0x20</code></p>
+    <pre>Keypad PCF8574 → 0x20
+LCD             → 0x27
+VL53L1X         → 0x29</pre>
+    <p><span class="label">สถานะ:</span> <span class="pending">ยังหา address จริงไม่ได้จนกว่าจะแก้ SCL</span></p>
+  </div>
+
+  <h2>ข้อ 6: อุปกรณ์ I²C ตัวเดียวทำให้ทุกตัวหยุดได้</h2>
+  <div class="item">
+    <p><span class="label">ปัญหา:</span> LCD, PCF8574 และ VL53L1X ใช้ SDA/SCL ร่วมกัน เมื่ออุปกรณ์ตัวหนึ่งลัดวงจร ทุกตัวจะหายจากระบบ</p>
+    <p><span class="label">วิธีแก้:</span></p>
+    <ol>
+      <li>ถอดอุปกรณ์ I²C ออกทั้งหมด</li>
+      <li>ตรวจว่า SDA และ SCL เป็น HIGH</li>
+      <li>ต่อ PCF8574 แล้วสแกน</li>
+      <li>เพิ่ม LCD แล้วสแกนอีกครั้ง</li>
+      <li>เพิ่ม VL53L1X เป็นตัวสุดท้าย</li>
+    </ol>
+  </div>
+
+  <h2>ข้อ 7: แรงดัน I²C ต้องเป็น 3.3V</h2>
+  <div class="item">
+    <p><span class="label">ปัญหา:</span> หาก Pull-up ของ SDA/SCL เป็น 5V อาจทำให้ขา ESP32-S3 เสียหาย</p>
+    <p><span class="label">วิธีแก้:</span> จ่าย PCF8574 ด้วย 3.3V และใช้ GND ร่วมกัน</p>
+    <table>
+      <tr><th>จุดวัด</th><th>ค่าที่ควรได้</th></tr>
+      <tr><td>VCC เทียบ GND</td><td>ประมาณ 3.3V</td></tr>
+      <tr><td>SDA เทียบ GND ตอนว่าง</td><td>ประมาณ 3.3V / HIGH</td></tr>
+      <tr><td>SCL เทียบ GND ตอนว่าง</td><td>ประมาณ 3.3V / HIGH</td></tr>
+    </table>
+  </div>
+
+  <h2>ข้อ 8: Upload ไม่ได้เพราะ COM19 ถูกใช้งาน</h2>
+  <div class="item">
+    <p><span class="label">ปัญหา:</span> ขึ้นข้อความ <code>COM19 Access is denied</code></p>
+    <p><span class="label">สาเหตุ:</span> มี Serial Monitor เปิดค้างมากกว่าหนึ่งชุด</p>
+    <p><span class="label">วิธีแก้:</span> ปิด Serial Monitor ก่อน Upload และเปิดใหม่หลัง Upload เสร็จ</p>
+    <p><span class="label">สถานะ:</span> <span class="pass">แก้ได้แล้ว</span></p>
+  </div>
+
+  <h2>สรุปสถานะปัจจุบัน</h2>
+  <table>
+    <tr><th>อุปกรณ์</th><th>สถานะ</th><th>สิ่งที่ต้องทำต่อ</th></tr>
+    <tr><td>ESP32-S3</td><td class="pass">ผ่าน</td><td>ไม่มี</td></tr>
+    <tr><td>HX711</td><td class="pass">ผ่าน</td><td>คาลิเบรตเป็นกิโลกรัม</td></tr>
+    <tr><td>Load Cell</td><td class="pass">อ่าน RAW ได้</td><td>Tare และ Calibration</td></tr>
+    <tr><td>PCF8574 Keypad</td><td class="pending">ยังไม่ผ่าน</td><td>แก้ SCL LOW แล้วสแกน address</td></tr>
+    <tr><td>LCD</td><td class="pending">รอตรวจ</td><td>ตรวจหลัง I²C กลับมาปกติ</td></tr>
+    <tr><td>VL53L1X</td><td class="pending">รอตรวจ</td><td>ตรวจหลัง I²C กลับมาปกติ</td></tr>
+    <tr><td>USB Printer</td><td class="pending">ยังไม่ทดสอบ</td><td>ทดสอบกับเครื่องจริง</td></tr>
+  </table>
+
+  <div class="warning"><strong>สิ่งที่ต้องทำเป็นอันดับแรก:</strong> ปิดไฟ ตรวจลำดับขา PCF8574 และแก้ SCL/GPIO9 ให้กลับเป็น HIGH จากนั้นจึงใช้ I²C Scanner หา address</div>
+  <p class="footer">เอกสารฉบับนี้จัดทำให้ใช้เป็นข้อความสรุปในเล่มโครงงาน โดยแยกปัญหาและวิธีแก้เป็นข้อสั้น ๆ</p>
+</body>
+</html>

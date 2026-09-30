@@ -1,0 +1,410 @@
+[HX711] RAW=55179
+[VL53L1X] Distance=1987 mm
+[HX711] RAW=55134
+[VL53L1X] Distance=1990 mm
+[HX711] RAW=55003
+[VL53L1X] Distance=1989 mm
+[HX711] RAW=55220
+[VL53L1X] Distance=1987 mm
+[HX711] RAW=55072
+[VL53L1X] Distance=1989 mm
+[HX711] RAW=55205
+[VL53L1X] Distance=1989 mm
+[HX711] RAW=55063
+[VL53L1X] Distance=1984 mm
+[HX711] RAW=55047
+[VL53L1X] Distance=1990 mm
+[HX711] RAW=55085
+[VL53L1X] Distance=1977 mm
+[HX711] RAW=55100
+[VL53L1X] Distance=1986 mm
+[HX711] RAW=55258
+[VL53L1X] Distance=1988 mm
+[HX711] RAW=55104
+[VL53L1X] Distance=1988 mm
+[HX711] RAW=55063
+[VL53L1X] Distance=1984 mm
+[HX711] RAW=55101
+[VL53L1X] Distance=1985 mm
+[HX711] RAW=55140
+[VL53L1X] Distance=1988 mm
+[HX711] RAW=55173
+[VL53L1X] Distance=1984 mm
+[HX711] RAW=55156
+[VL53L1X] Distance=1990 mm
+[HX711] RAW=55046
+[VL53L1X] Distance=1991 mm
+[Keypad] กดปุ่ม: B
+[วัดจริง] อ่านน้ำหนักเป็นกิโลกรัมไม่สำเร็จ ตรวจ Load Cell และค่า CALIBRATION_FACTOR=8848.669922
+[ทดสอบระบบชั่วคราว] ใช้คำสั่ง Serial: วัด 60 170
+[HX711] RAW=55066
+[VL53L1X] Distance=1985 mm
+[HX711] RAW=55059
+[VL53L1X] Distance=1987 mm
+[HX711] RAW=54955
+[VL53L1X] Distance=1986 mm
+[HX711] RAW=55086
+[VL53L1X] Distance=1984 mm
+[HX711] RAW=55079
+[VL53L1X] Distance=1988 mm
+[HX711] RAW=55062
+[VL53L1X] Distance=1984 mm
+[HX711] RAW=55162
+[VL53L1X] Distance=1984 mm
+[HX711] RAW=55129
+[VL53L1X] Distance=1985 mm
+[HX711] RAW=55084
+[VL53L1X] Distance=1984 mm
+[HX711] RAW=55090
+[VL53L1X] Distance=1984 mm
+[Keypad] กดปุ่ม: B
+[วัดจริง] อ่านน้ำหนักเป็นกิโลกรัมไม่สำเร็จ ตรวจ Load Cell และค่า CALIBRATION_FACTOR=8848.669922
+[ทดสอบระบบชั่วคราว] ใช้คำสั่ง Serial: วัด 60 170
+[HX711] RAW=55169
+[VL53L1X] Distance=1987 mm
+[HX711] RAW=55164
+[VL53L1X] Distance=1980 mm
+[HX711] RAW=55079
+[VL53L1X] Distance=1984 mm
+[HX711] RAW=55065
+[VL53L1X] Distance=1982 mm
+[HX711] RAW=55132
+[VL53L1X] Distance=1982 mm
+[HX711] RAW=55113
+[VL53L1X] Distance=1981 mm
+[Keypad] กดปุ่ม: B
+[วัดจริง] อ่านน้ำหนักเป็นกิโลกรัมไม่สำเร็จ ตรวจ Load Cell และค่า CALIBRATION_FACTOR=8848.669922
+[ทดสอบระบบชั่วคราว] ใช้คำสั่ง Serial: วัด 60 170
+[HX711] RAW=55134
+[VL53L1X] Distance=1984 mm
+[HX711] RAW=55032
+[VL53L1X] Invalid range: no update
+[VL53L1X] อ่านค่าระยะไม่สำเร็จ
+[HX711] RAW=55106
+[VL53L1X] Invalid range: signal fail
+[VL53L1X] อ่านค่าระยะไม่สำเร็จ
+[HX711] RAW=55145
+[VL53L1X] Invalid range: signal fail
+[VL53L1X] อ่านค่าระยะไม่สำเร็จ
+[HX711] RAW=55178
+[VL53L1X] Distance=1981 mm
+[HX711] RAW=55055
+[VL53L1X] Distance=1984 mm
+[HX711] RAW=55055
+[VL53L1X] Distance=1980 mm
+[HX711] RAW=55122
+[VL53L1X] Distance=1985 mm
+[HX711] RAW=55162
+[VL53L1X] Distance=1988 mm
+[HX711] RAW=55094
+[VL53L1X] Distance=1989 mm
+[HX711] RAW=55105
+[VL53L1X] Distance=1984 mm
+[HX711] RAW=55130
+[VL53L1X] Distance=1984 mm
+[Keypad] กดปุ่ม: B
+[วัดจริง] อ่านน้ำหนักเป็นกิโลกรัมไม่สำเร็จ ตรวจ Load Cell และค่า CALIBRATION_FACTOR=8848.669922
+[ทดสอบระบบชั่วคราว] ใช้คำสั่ง Serial: วัด 60 170
+[HX711] RAW=55160
+[VL53L1X] Distance=1992 mm
+[HX711] RAW=55197
+[VL53L1X] Distance=1985 mm
+[HX711] RAW=55150
+[459126][E][Wire.cpp:513] requestFrom(): i2cRead returned Error -1
+[VL53L1X] Invalid range: no update
+[VL53L1X] อ่านค่าระยะไม่สำเร็จ
+[HX711] RAW=55134
+[VL53L1X] Invalid range: signal fail
+[VL53L1X] อ่านค่าระยะไม่สำเร็จ
+[HX711] RAW=55198
+[VL53L1X] Distance=1988 mm
+[HX711] RAW=55147
+[VL53L1X] Distance=1989 mm
+[HX711] RAW=55118
+[VL53L1X] Distance=1985 mm
+[HX711] RAW=55081
+[VL53L1X] Distance=1987 mm
+[HX711] RAW=55138
+[VL53L1X] Distance=1987 mm
+[HX711] RAW=55134
+[VL53L1X] Distance=1989 mm
+[HX711] RAW=55254
+[VL53L1X] Distance=1984 mm
+[HX711] RAW=55208
+[VL53L1X] Distance=1986 mm
+[HX711] RAW=55130
+[VL53L1X] Distance=1992 mm
+[HX711] RAW=55253
+[VL53L1X] Distance=1991 mm
+[HX711] RAW=55220
+[VL53L1X] Distance=1986 mm
+[HX711] RAW=55142
+[VL53L1X] Distance=1988 mm
+[HX711] RAW=55112
+[VL53L1X] Distance=1992 mm
+[HX711] RAW=54943
+[VL53L1X] Distance=1985 mm
+[HX711] RAW=54971
+[VL53L1X] Distance=1985 mm
+[HX711] RAW=54990
+[VL53L1X] Distance=1987 mm
+[HX711] RAW=55035
+[VL53L1X] Distance=1981 mm
+[HX711] RAW=54942
+[VL53L1X] Distance=1984 mm
+[HX711] RAW=55026
+[VL53L1X] Distance=1986 mm
+[HX711] RAW=55033
+[VL53L1X] Distance=1985 mm
+[HX711] RAW=55084
+[VL53L1X] Distance=1988 mm
+[HX711] RAW=55007
+[VL53L1X] Distance=1984 mm
+[HX711] RAW=55059
+[VL53L1X] Distance=1982 mm
+[Keypad] กดปุ่ม: B
+[วัดจริง] อ่านน้ำหนักเป็นกิโลกรัมไม่สำเร็จ ตรวจ Load Cell และค่า CALIBRATION_FACTOR=8848.669922
+[ทดสอบระบบชั่วคราว] ใช้คำสั่ง Serial: วัด 60 170
+[HX711] RAW=55059
+[VL53L1X] Distance=1986 mm
+[HX711] RAW=55054
+[VL53L1X] Distance=1987 mm
+[HX711] RAW=55083
+[VL53L1X] Invalid range: no update
+[VL53L1X] อ่านค่าระยะไม่สำเร็จ
+[HX711] RAW=55048
+[VL53L1X] Invalid range: signal fail
+[VL53L1X] อ่านค่าระยะไม่สำเร็จ
+[HX711] RAW=55087
+[VL53L1X] Distance=1991 mm
+[HX711] RAW=54969
+[VL53L1X] Distance=1986 mm
+[Keypad] กดปุ่ม: B
+[วัดจริง] อ่านน้ำหนักเป็นกิโลกรัมไม่สำเร็จ ตรวจ Load Cell และค่า CALIBRATION_FACTOR=8848.669922
+[ทดสอบระบบชั่วคราว] ใช้คำสั่ง Serial: วัด 60 170
+[HX711] RAW=55070
+[VL53L1X] Distance=1985 mm
+[HX711] RAW=55077
+[VL53L1X] Distance=1990 mm
+[HX711] RAW=55015
+[VL53L1X] Distance=1985 mm
+[HX711] RAW=55121
+[VL53L1X] Distance=1984 mm
+[HX711] RAW=55037
+[VL53L1X] Distance=1984 mm
+[HX711] RAW=55035
+[VL53L1X] Distance=1985 mm
+[HX711] RAW=55061
+[VL53L1X] Distance=1989 mm
+[Wi-Fi] การเชื่อมต่อหลุด ระบบจะเชื่อมต่อใหม่อัตโนมัติ
+[Wi-Fi] กำลังเชื่อมต่อเครือข่าย clinicIoT...
+[497835][E][ssl_client.cpp:37] _handle_error(): [data_to_read():361]: (-76) UNKNOWN ERROR CODE (004C)
+[HX711] RAW=54985
+[VL53L1X] Distance=1990 mm
+[HX711] RAW=55037
+[500644][E][Wire.cpp:513] requestFrom(): i2cRead returned Error 263
+[VL53L1X] Invalid range: no update
+[VL53L1X] อ่านค่าระยะไม่สำเร็จ
+[HX711] RAW=55092
+[VL53L1X] Invalid range: signal fail
+[VL53L1X] อ่านค่าระยะไม่สำเร็จ
+[HX711] RAW=55044
+[VL53L1X] Distance=1985 mm
+[HX711] RAW=54996
+[VL53L1X] Distance=1984 mm
+[Wi-Fi] กำลังเชื่อมต่อเครือข่าย clinicIoT...
+[HX711] RAW=55047
+[VL53L1X] Distance=1981 mm
+[HX711] RAW=55075
+[VL53L1X] Distance=1984 mm
+[HX711] RAW=54969
+[VL53L1X] Distance=1987 mm
+[HX711] RAW=55009
+[VL53L1X] Distance=1983 mm
+[HX711] RAW=55024
+[VL53L1X] Distance=1981 mm
+[HX711] RAW=55028
+[VL53L1X] Distance=1986 mm
+[Wi-Fi] กำลังเชื่อมต่อเครือข่าย clinicIoT...
+[HX711] RAW=55028
+[VL53L1X] Distance=1988 mm
+[HX711] RAW=55034
+[VL53L1X] Distance=1986 mm
+[HX711] RAW=54987
+[VL53L1X] Distance=1981 mm
+[HX711] RAW=54951
+[VL53L1X] Distance=1985 mm
+[HX711] RAW=54977
+[VL53L1X] Distance=1984 mm
+[HX711] RAW=55019
+[VL53L1X] Distance=1987 mm
+[Wi-Fi] กำลังเชื่อมต่อเครือข่าย clinicIoT...
+[HX711] RAW=54962
+[VL53L1X] Distance=1985 mm
+[HX711] RAW=55012
+[VL53L1X] Distance=1985 mm
+[HX711] RAW=54956
+[VL53L1X] Distance=1986 mm
+[HX711] RAW=54959
+[VL53L1X] อ่านค่าระยะไม่สำเร็จ
+[HX711] RAW=54961
+[VL53L1X] Invalid range: signal fail
+[VL53L1X] อ่านค่าระยะไม่สำเร็จ
+[HX711] RAW=55001
+[VL53L1X] Distance=1988 mm
+[Wi-Fi] กำลังเชื่อมต่อเครือข่าย clinicIoT...
+[HX711] RAW=54976
+[VL53L1X] Distance=1982 mm
+[HX711] RAW=54958
+[VL53L1X] Distance=1987 mm
+[HX711] RAW=54953
+[VL53L1X] Distance=1981 mm
+[HX711] RAW=54981
+[VL53L1X] Distance=1987 mm
+[HX711] RAW=54969
+[VL53L1X] Distance=1991 mm
+[HX711] RAW=54981
+[VL53L1X] Distance=1982 mm
+[Wi-Fi] กำลังเชื่อมต่อเครือข่าย clinicIoT...
+[HX711] RAW=54970
+[527287][E][Wire.cpp:513] requestFrom(): i2cRead returned Error 263
+[VL53L1X] Invalid range: no update
+[VL53L1X] อ่านค่าระยะไม่สำเร็จ
+[HX711] RAW=55054
+[VL53L1X] Invalid range: signal fail
+[VL53L1X] อ่านค่าระยะไม่สำเร็จ
+[HX711] RAW=54905
+[VL53L1X] Distance=1989 mm
+[HX711] RAW=54956
+[VL53L1X] Distance=1984 mm
+[HX711] RAW=54955
+[VL53L1X] Distance=1984 mm
+[Wi-Fi] กำลังเชื่อมต่อเครือข่าย clinicIoT...
+[HX711] RAW=54921
+[VL53L1X] Distance=1987 mm
+[HX711] RAW=54975
+[VL53L1X] Distance=1986 mm
+[HX711] RAW=54937
+[VL53L1X] Distance=1990 mm
+[HX711] RAW=54985
+[VL53L1X] Distance=1984 mm
+[HX711] RAW=55044
+[VL53L1X] Distance=1988 mm
+[HX711] RAW=54953
+[VL53L1X] Distance=1986 mm
+[Wi-Fi] กำลังเชื่อมต่อเครือข่าย clinicIoT...
+[HX711] RAW=54920
+[VL53L1X] Distance=1986 mm
+[HX711] RAW=54975
+[VL53L1X] Distance=1987 mm
+[HX711] RAW=54954
+[VL53L1X] Distance=1987 mm
+[HX711] RAW=55011
+[VL53L1X] Distance=1985 mm
+[HX711] RAW=54956
+[VL53L1X] Distance=1983 mm
+[HX711] RAW=54948
+[VL53L1X] Distance=1984 mm
+[Wi-Fi] กำลังเชื่อมต่อเครือข่าย clinicIoT...
+[HX711] RAW=54947
+[VL53L1X] Distance=1989 mm
+[HX711] RAW=54949
+[VL53L1X] Distance=1987 mm
+[HX711] RAW=54998
+[544661][E][Wire.cpp:513] requestFrom(): i2cRead returned Error -1
+[VL53L1X] Distance=1982 mm
+[HX711] RAW=54943
+[VL53L1X] Distance=1985 mm
+[HX711] RAW=54925
+[VL53L1X] Distance=1984 mm
+[HX711] RAW=54940
+[VL53L1X] Distance=1992 mm
+[Wi-Fi] กำลังเชื่อมต่อเครือข่าย clinicIoT...
+[HX711] RAW=54949
+[VL53L1X] Distance=1984 mm
+[HX711] RAW=54846
+[VL53L1X] Distance=1985 mm
+[HX711] RAW=54853
+[VL53L1X] Distance=1987 mm
+[HX711] RAW=54888
+[VL53L1X] Distance=1986 mm
+[HX711] RAW=54850
+[VL53L1X] Distance=1989 mm
+[HX711] RAW=54877
+[VL53L1X] Distance=1986 mm
+[Wi-Fi] กำลังเชื่อมต่อเครือข่าย clinicIoT...
+[HX711] RAW=54818
+[VL53L1X] Distance=1982 mm
+[HX711] RAW=54871
+[VL53L1X] Distance=1987 mm
+[HX711] RAW=54802
+[VL53L1X] Distance=1986 mm
+[HX711] RAW=54958
+[VL53L1X] Distance=1987 mm
+[HX711] RAW=54890
+[VL53L1X] Distance=1984 mm
+[HX711] RAW=54878
+[VL53L1X] Distance=1989 mm
+[Wi-Fi] กำลังเชื่อมต่อเครือข่าย clinicIoT...
+[HX711] RAW=54872
+[VL53L1X] Distance=1984 mm
+[HX711] RAW=54855
+[VL53L1X] Distance=1989 mm
+[HX711] RAW=54858
+[VL53L1X] Distance=1989 mm
+[HX711] RAW=54895
+[VL53L1X] Distance=1991 mm
+[HX711] RAW=54836
+[VL53L1X] Distance=1989 mm
+[HX711] RAW=54866
+[VL53L1X] Distance=1992 mm
+[Wi-Fi] กำลังเชื่อมต่อเครือข่าย clinicIoT...
+[HX711] RAW=54925
+[VL53L1X] Distance=1988 mm
+[HX711] RAW=54862
+[VL53L1X] Distance=1984 mm
+[HX711] RAW=54820
+[VL53L1X] Distance=1988 mm
+[HX711] RAW=54880
+[VL53L1X] Distance=1987 mm
+[HX711] RAW=54842
+[VL53L1X] Distance=1983 mm
+[HX711] RAW=54907
+[VL53L1X] Distance=1985 mm
+[Wi-Fi] กำลังเชื่อมต่อเครือข่าย clinicIoT...
+[HX711] RAW=54869
+[VL53L1X] Distance=1993 mm
+[HX711] RAW=54922
+[VL53L1X] อ่านค่าระยะไม่สำเร็จ
+[HX711] RAW=54985
+[VL53L1X] Invalid range: signal fail
+[VL53L1X] อ่านค่าระยะไม่สำเร็จ
+[Wi-Fi] เชื่อมต่อสำเร็จ IP: 172.20.10.2
+[MQTT] กำลังเชื่อมต่อ hf391a51.ala.asia-southeast1.emqxsl.com:8883...
+[579247][E][WiFiGeneric.cpp:1583] hostByName(): DNS Failed for hf391a51.ala.asia-southeast1.emqxsl.com
+[MQTT] เชื่อมต่อไม่สำเร็จ: error=-3 returnCode=0
+[TLS] error=48: PADLOCK - Input data should be aligned
+[HX711] RAW=54866
+[580032][E][Wire.cpp:513] requestFrom(): i2cRead returned Error -1
+[VL53L1X] Invalid range: no update
+[VL53L1X] อ่านค่าระยะไม่สำเร็จ
+[MQTT] กำลังเชื่อมต่อ hf391a51.ala.asia-southeast1.emqxsl.com:8883...
+[587050][E][WiFiGeneric.cpp:1583] hostByName(): DNS Failed for hf391a51.ala.asia-southeast1.emqxsl.com
+[MQTT] เชื่อมต่อไม่สำเร็จ: error=-3 returnCode=0
+[TLS] error=48: PADLOCK - Input data should be aligned
+[HX711] RAW=54799
+[VL53L1X] Invalid range: signal fail
+[VL53L1X] อ่านค่าระยะไม่สำเร็จ
+[MQTT] กำลังเชื่อมต่อ hf391a51.ala.asia-southeast1.emqxsl.com:8883...
+[594855][E][WiFiGeneric.cpp:1583] hostByName(): DNS Failed for hf391a51.ala.asia-southeast1.emqxsl.com
+[MQTT] เชื่อมต่อไม่สำเร็จ: error=-3 returnCode=0
+[TLS] error=48: PADLOCK - Input data should be aligned
+[HX711] RAW=54784
+[VL53L1X] Distance=1985 mm
+[MQTT] กำลังเชื่อมต่อ hf391a51.ala.asia-southeast1.emqxsl.com:8883...
+[602654][E][WiFiGeneric.cpp:1583] hostByName(): DNS Failed for hf391a51.ala.asia-southeast1.emqxsl.com
+[MQTT] เชื่อมต่อไม่สำเร็จ: error=-3 returnCode=0
+[TLS] error=48: PADLOCK - Input data should be aligned
+[HX711] RAW=54776
+[VL53L1X] Distance=1985 mm
+[MQTT] กำลังเชื่อมต่อ hf391a51.ala.asia-southeast1.emqxsl.com:8883...

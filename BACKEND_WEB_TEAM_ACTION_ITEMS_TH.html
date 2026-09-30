@@ -1,0 +1,246 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <title>รายการงานฝั่ง Backend และ Web</title>
+  <style>
+    @page { size: A4; margin: 14mm 14mm 16mm; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      color: #182235;
+      background: #fff;
+      font-family: Tahoma, "Leelawadee UI", sans-serif;
+      font-size: 10pt;
+      line-height: 1.5;
+    }
+    h1, h2, h3, p { margin-top: 0; }
+    h1 { margin-bottom: 5px; color: #173f91; font-size: 23pt; line-height: 1.18; }
+    h2 {
+      margin: 18px 0 8px;
+      padding-bottom: 5px;
+      color: #173f91;
+      border-bottom: 2px solid #2863dd;
+      font-size: 14.5pt;
+      break-after: avoid;
+    }
+    h3 { margin: 12px 0 5px; color: #2653a8; font-size: 11.5pt; break-after: avoid; }
+    p { margin-bottom: 7px; }
+    ul, ol { margin: 5px 0 10px; padding-left: 23px; }
+    li { margin-bottom: 3px; }
+    code {
+      padding: 1px 4px;
+      border-radius: 4px;
+      color: #163b82;
+      background: #edf3ff;
+      font-family: Consolas, monospace;
+      font-size: 8.8pt;
+    }
+    pre {
+      margin: 6px 0 11px;
+      padding: 9px 11px;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      border: 1px solid #d8e1ef;
+      border-radius: 8px;
+      background: #f7f9fc;
+      font: 8.2pt/1.4 Consolas, monospace;
+      break-inside: avoid;
+    }
+    table { width: 100%; margin: 7px 0 11px; border-collapse: collapse; font-size: 9.1pt; }
+    th, td { padding: 6px 7px; border: 1px solid #d7dfed; vertical-align: top; }
+    th { color: #fff; background: #2862dc; text-align: left; }
+    tr:nth-child(even) td { background: #f8faff; }
+    .cover {
+      padding: 22px 24px;
+      border: 1px solid #c8d9ff;
+      border-radius: 15px;
+      background: linear-gradient(135deg, #eaf2ff 0%, #fff 72%);
+    }
+    .subtitle { margin: 0; color: #53627a; font-size: 11.5pt; }
+    .meta { margin-top: 14px; color: #58667c; }
+    .badge {
+      display: inline-block;
+      margin-top: 12px;
+      padding: 7px 12px;
+      color: #124fab;
+      background: #e5efff;
+      border: 1px solid #b7d0ff;
+      border-radius: 999px;
+      font-weight: 700;
+    }
+    .summary, .info, .warning, .danger {
+      margin-top: 13px;
+      padding: 11px 13px;
+      border-radius: 8px;
+      break-inside: avoid;
+    }
+    .summary { border-left: 5px solid #2863dd; background: #f2f6ff; }
+    .info { border: 1px solid #bad1ff; background: #f3f8ff; }
+    .warning { border: 1px solid #ffd18a; background: #fff8e8; }
+    .danger { border: 1px solid #f1a6ab; background: #fff1f2; }
+    .p0 { color: #b52431; font-weight: 700; white-space: nowrap; }
+    .p1 { color: #a55a00; font-weight: 700; white-space: nowrap; }
+    .p2 { color: #1555bd; font-weight: 700; white-space: nowrap; }
+    .now { color: #08763d; font-weight: 700; white-space: nowrap; }
+    .wait { color: #805400; font-weight: 700; white-space: nowrap; }
+    .small { color: #667287; font-size: 8.8pt; }
+    .avoid { break-inside: avoid; }
+  </style>
+</head>
+<body>
+  <section class="cover">
+    <h1>รายการงานฝั่ง Backend และ Web</h1>
+    <p class="subtitle">ระบบ ClinicCare Scale — คิวออนไลน์ A และ Walk-in B</p>
+    <div class="badge">เอกสารส่งมอบงานระหว่างทีม</div>
+    <p class="meta">
+      วันที่จัดทำ: 16 กันยายน 2569<br>
+      Device ทดสอบ: <code>SCALE-001</code><br>
+      สถานะ Firmware: Queue A และ Walk-in ผ่าน Software End-to-End แล้ว<br>
+      ขอบเขตเอกสาร: งานที่ Backend/Web ทำได้ทันที และงานที่ต้องรอข้อมูลจากทีม Firmware/Hardware
+    </p>
+  </section>
+
+  <div class="summary">
+    <strong>ข้อสรุป:</strong> ทีม Backend และ Web สามารถทำงานหลักต่อได้ทันทีโดยไม่ต้องรอเซนเซอร์จริง
+    งานเร่งด่วนที่สุดคือแก้ Print Outbox ไม่ให้ส่งงานเดิมวนหลังได้รับ <code>failed</code>,
+    ยืนยัน idempotency ของ Measurement และทำให้สถานะ OTP/Print บนเว็บตรวจสอบได้ชัดเจน
+  </div>
+
+  <h2>1. สถานะที่ Firmware ส่งมอบแล้ว</h2>
+  <ul>
+    <li>เชื่อม MQTT/TLS พอร์ต 8883, MQTT 3.1.1, QoS 1 และ Retain false</li>
+    <li>รองรับ Queue A: OTP → Session → Measurement → ACK → Print → Print ACK</li>
+    <li>รองรับ Walk-in B โดยไม่ใช้ OTP</li>
+    <li>สร้าง request_id/message_id ใหม่ และ Retry ด้วย message_id/payload เดิม</li>
+    <li>เก็บ Measurement Pending ใน NVS และส่งใหม่หลัง reconnect/restart</li>
+    <li>ตรวจ request_id, message_id, measurement_id และ Queue prefix A/B</li>
+    <li>รับ expires_at, ตรวจ Session หมดอายุ และส่งเวลา measured_at แบบ UTC</li>
+    <li>ไม่คำนวณ BMI; Backend เป็นผู้คำนวณและส่งมากับ Print Job</li>
+    <li>ป้องกัน Print Job ซ้ำด้วย print_job_id และเก็บประวัติใน NVS</li>
+  </ul>
+
+  <div class="info">
+    ผลทดสอบจริง: Queue A ได้ A002, Measurement 67/68, BMI 20.76 และการจำลอง ACK สูญหายได้รับ
+    duplicate พร้อม Measurement/Queue เดิม ส่วน Walk-in ได้คิว B และผ่าน Retry/NVS/Duplicate แล้ว
+  </div>
+
+  <h2>2. งาน Backend</h2>
+  <table>
+    <thead><tr><th style="width:10%">ลำดับ</th><th style="width:14%">ความสำคัญ</th><th>งาน</th><th style="width:18%">เริ่มได้</th></tr></thead>
+    <tbody>
+      <tr><td>BE-01</td><td class="p0">P0</td><td>แก้ Print Outbox ไม่ให้ส่ง print_job_id เดิมวนไม่สิ้นสุดหลังได้รับ status=failed</td><td class="now">ทำได้ทันที</td></tr>
+      <tr><td>BE-02</td><td class="p0">P0</td><td>กำหนด Print retry policy: backoff, max attempts, terminal state และ manual reprint</td><td class="now">ทำได้ทันที</td></tr>
+      <tr><td>BE-03</td><td class="p0">P0</td><td>เมื่อ measurement ACK ระบุ print_pending=true ต้องมี Print Job ใน Outbox จริงและส่งได้</td><td class="now">ทำได้ทันที</td></tr>
+      <tr><td>BE-04</td><td class="p0">P0</td><td>บังคับ Unique/Idempotency ด้วย device_id + message_id; duplicate ต้องคืน Measurement และ Queue เดิม</td><td class="now">ทำได้ทันที</td></tr>
+      <tr><td>BE-05</td><td class="p0">P0</td><td>Measurement ACK แบบ accepted/duplicate ต้องมี message_id, measurement_id &gt; 0, queue_number และ print_pending</td><td class="now">ทำได้ทันที</td></tr>
+      <tr><td>BE-06</td><td class="p1">P1</td><td>ตรวจ queue_number ใน otp-result ให้ตรงกับ measurement-ack ของ Session เดียวกัน</td><td class="now">ทำได้ทันที</td></tr>
+      <tr><td>BE-07</td><td class="p1">P1</td><td>แยก OTP error เช่น OTP_EXPIRED, OTP_USED, OTP_NOT_ACTIVE_YET, OTP_NOT_FOUND และ RATE_LIMITED</td><td class="now">ทำได้ทันที</td></tr>
+      <tr><td>BE-08</td><td class="p1">P1</td><td>เก็บ Audit Log ตาม request_id, measurement_session_id, message_id และ print_job_id</td><td class="now">ทำได้ทันที</td></tr>
+      <tr><td>BE-09</td><td class="p1">P1</td><td>ตรวจ Print ACK: printed/failed พร้อม error_code และเวลา received_at</td><td class="now">ทำได้ทันที</td></tr>
+      <tr><td>BE-10</td><td class="p1">P1</td><td>สร้าง print_job_id ใหม่เฉพาะเมื่อผู้ใช้สั่งพิมพ์ใหม่ ห้ามใช้ ID เดิมเป็นงานใหม่</td><td class="now">ทำได้ทันที</td></tr>
+      <tr><td>BE-11</td><td class="p1">P1</td><td>เพิ่ม Health/Metric สำหรับ MQTT consumer, Outbox backlog, ACK latency และ failure rate</td><td class="now">ทำได้ทันที</td></tr>
+      <tr><td>BE-12</td><td class="p1">P1</td><td>กำหนด MQTT ACL และ Credential แยกต่อ Device; ห้าม Client เข้าถึง Topic ของเครื่องอื่น</td><td class="now">ทำได้ทันที</td></tr>
+      <tr><td>BE-13</td><td class="p2">P2</td><td>รองรับ PAPER_OUT หรือ error เฉพาะ Printer เพิ่มเติม</td><td class="wait">รอผล Hardware</td></tr>
+    </tbody>
+  </table>
+
+  <h2>3. งาน Web/Admin</h2>
+  <table>
+    <thead><tr><th style="width:10%">ลำดับ</th><th style="width:14%">ความสำคัญ</th><th>งาน</th><th style="width:18%">เริ่มได้</th></tr></thead>
+    <tbody>
+      <tr><td>WEB-01</td><td class="p0">P0</td><td>แสดง Queue A/B และ Measurement ล่าสุดโดยไม่สร้างแถวซ้ำเมื่อ Backend deduplicate</td><td class="now">ทำได้ทันที</td></tr>
+      <tr><td>WEB-02</td><td class="p0">P0</td><td>แสดง Weight, Height และ BMI จาก Backend พร้อมหน่วยที่ถูกต้อง</td><td class="now">ทำได้ทันที</td></tr>
+      <tr><td>WEB-03</td><td class="p1">P1</td><td>แสดง OTP status: พร้อมใช้, ยังไม่ถึงเวลา, หมดอายุ, ใช้แล้ว และปุ่มส่งรหัสใหม่</td><td class="now">ทำได้ทันที</td></tr>
+      <tr><td>WEB-04</td><td class="p1">P1</td><td>แสดง Device Online/Offline และเวลาที่ได้รับข้อมูลล่าสุด</td><td class="now">ทำได้ทันที</td></tr>
+      <tr><td>WEB-05</td><td class="p1">P1</td><td>แสดง Print status: pending, printed, failed และ error_code ที่อ่านเข้าใจได้</td><td class="now">ทำได้ทันที</td></tr>
+      <tr><td>WEB-06</td><td class="p1">P1</td><td>ปุ่ม Reprint ต้องเรียก Backend ให้สร้าง print_job_id ใหม่และเก็บผู้สั่ง/เวลา</td><td class="now">ทำได้ทันที</td></tr>
+      <tr><td>WEB-07</td><td class="p1">P1</td><td>เพิ่ม Real-time update หรือ Polling พร้อมสถานะเมื่อการอัปเดตขาดหาย</td><td class="now">ทำได้ทันที</td></tr>
+      <tr><td>WEB-08</td><td class="p2">P2</td><td>หน้าตรวจสอบ Timeline ของ OTP → Measurement → Print สำหรับผู้ดูแล</td><td class="now">ทำได้ทันที</td></tr>
+      <tr><td>WEB-09</td><td class="p2">P2</td><td>ข้อความช่วยเหลือตาม Error จากอุปกรณ์ เช่นตรวจสาย Printer หรือเติมกระดาษ</td><td class="wait">บางส่วนรอ Hardware</td></tr>
+    </tbody>
+  </table>
+
+  <h2>4. Contract ที่ต้องรักษา</h2>
+  <h3>Measurement ACK สำเร็จ</h3>
+  <pre>{
+  "message_id": "MSG-A-or-B-...",
+  "status": "accepted",
+  "measurement_id": 68,
+  "queue_number": "A002",
+  "print_pending": true
+}</pre>
+
+  <h3>Measurement เดิมถูกส่งซ้ำ</h3>
+  <pre>{
+  "message_id": "MSG-A-or-B-เดิม",
+  "status": "duplicate",
+  "measurement_id": 68,
+  "queue_number": "A002",
+  "print_pending": true
+}</pre>
+  <p>ห้ามสร้าง Measurement หรือ Queue ใหม่เมื่อ <code>device_id + message_id</code> เดิมถูกส่งซ้ำ</p>
+
+  <h3>Print ACK</h3>
+  <pre>{
+  "print_job_id": "PRINT-...",
+  "device_id": "SCALE-001",
+  "status": "failed",
+  "error_code": "PRINTER_NOT_CONNECTED"
+}</pre>
+
+  <h2>5. เกณฑ์รับงาน Backend</h2>
+  <ul>
+    <li>☐ ส่ง Measurement ใหม่ครั้งแรก ได้ accepted และ Measurement/Queue หนึ่งรายการ</li>
+    <li>☐ ส่ง message_id และ payload เดิมซ้ำ ได้ duplicate พร้อม ID/Queue เดิม</li>
+    <li>☐ message_id เดิมแต่ payload ต่างกัน ต้อง rejected ด้วย MESSAGE_ID_CONFLICT</li>
+    <li>☐ OTP ถูกวันและยังไม่ใช้ ได้ accepted พร้อม Session/Queue/expires_at</li>
+    <li>☐ OTP ใช้แล้ว/หมดอายุ/ยังไม่ถึงเวลา ได้ error ที่แยกสาเหตุได้</li>
+    <li>☐ print_pending=true แล้วมี Print Job จริง</li>
+    <li>☐ รับ print-ack=failed แล้ว Outbox หยุดตามนโยบาย ไม่ส่งวนถี่ไม่สิ้นสุด</li>
+    <li>☐ Manual reprint สร้าง print_job_id ใหม่</li>
+    <li>☐ Log สามารถค้นเส้นทางครบด้วย request/message/print job ID</li>
+  </ul>
+
+  <h2>6. เกณฑ์รับงาน Web</h2>
+  <ul>
+    <li>☐ Queue A/B แสดงเพียงหนึ่งแถวต่อคิว</li>
+    <li>☐ Weight/Height/BMI ตรงกับข้อมูล Backend</li>
+    <li>☐ สถานะ OTP และวันเวลาที่ใช้ได้แสดงชัดเจน</li>
+    <li>☐ สถานะ Printer เปลี่ยนตาม Print ACK</li>
+    <li>☐ Reprint ไม่ใช้ print_job_id เดิม</li>
+    <li>☐ ผู้ดูแลเห็น Device Online/Offline และ Last seen</li>
+    <li>☐ หน้าเว็บแจ้งเมื่อ Real-time update ขาดการเชื่อมต่อ</li>
+  </ul>
+
+  <h2>7. สิ่งที่ต้องรอจาก Firmware/Hardware</h2>
+  <table>
+    <thead><tr><th>ข้อมูลที่รอ</th><th>ผู้ส่งมอบ</th><th>ใช้กับงาน</th></tr></thead>
+    <tbody>
+      <tr><td>ค่าคาลิเบรต Load Cell และช่วงค่าจริง</td><td>Firmware/Hardware</td><td>Validation/ข้อความบนเว็บ</td></tr>
+      <tr><td>ความสูงติดตั้งและ Offset ของ VL53L1X</td><td>Firmware/Hardware</td><td>ทดสอบ Height จริง</td></tr>
+      <tr><td>Printer VID/PID/Endpoint ที่ยืนยันแล้ว</td><td>Firmware/Hardware</td><td>Production configuration</td></tr>
+      <tr><td>ความสามารถอ่าน PAPER_OUT/Status ของ Printer</td><td>Firmware/Hardware</td><td>Error code และ UI</td></tr>
+      <tr><td>รูปแบบบัตรคิวและภาษา/Encoding ที่พิมพ์ได้</td><td>Product + Hardware</td><td>Print template</td></tr>
+      <tr><td>รายการ Device ID และ Credential ต่อสาขา</td><td>Ops + Firmware</td><td>MQTT ACL/Provisioning</td></tr>
+      <tr><td>ผลทดสอบ End-to-End กับคนและกระดาษจริง</td><td>ทุกทีม</td><td>Production sign-off</td></tr>
+    </tbody>
+  </table>
+
+  <div class="warning">
+    <strong>สิ่งที่ไม่ต้องรอ:</strong> Backend/Web ไม่ต้องรอ Load Cell, Height Sensor หรือ Printer เพื่อแก้ Idempotency,
+    OTP state, Print Outbox, Web duplicate, Logging, Monitoring และ MQTT ACL เพราะ Firmware ส่งค่าจำลองและทดสอบ Contract ได้แล้ว
+  </div>
+
+  <h2>8. ข้อความสรุปส่งทีม</h2>
+  <div class="danger">
+    Firmware Queue A และ Walk-in ผ่าน Software End-to-End แล้ว กรุณาดำเนินการ BE-01 ถึง BE-05 และ WEB-01 ถึง WEB-02
+    เป็นลำดับแรก โดยเฉพาะ Print Outbox, idempotency และความสัมพันธ์ระหว่าง print_pending กับ Print Job
+    งานเหล่านี้ไม่ต้องรออุปกรณ์จริง ส่วน PAPER_OUT, Printer status เฉพาะรุ่น และรูปแบบบัตรจริงให้รอผลจากทีม Firmware/Hardware
+  </div>
+
+  <p class="small" style="margin-top:18px;text-align:center">
+    เอกสารส่งมอบงาน Backend/Web — ClinicCare Scale — 16 กันยายน 2569
+  </p>
+</body>
+</html>

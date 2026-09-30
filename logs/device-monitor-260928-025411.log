@@ -1,0 +1,132 @@
+
+========== ทดสอบคิวคลินิกผ่าน Serial ==========
+A 123456             : ส่ง OTP จริงไปตรวจสอบ
+M 60 170              : ส่งน้ำหนักและส่วนสูงจำลองหลัง OTP ผ่าน
+วัด 60 170            : เหมือนคำสั่ง M 60 170
+T 123456 60 170       : ตรวจ OTP และส่งค่าวัดอัตโนมัติ
+ทดสอบ 123456 60 170   : เหมือนคำสั่ง T
+W 60 170              : ส่งค่าวัด Walk-in คิว B โดยไม่ใช้ OTP
+A123456#              : จำลองการกด Keypad ครบขั้นตอน OTP
+B                     : วัดจริง; ตอนว่าง=Walk-in, หลัง OTP=คิว A
+C                     : ลบเลข OTP ตัวล่าสุด
+D หรือ *              : ยกเลิกและกลับหน้าเริ่มต้น
+PRINTTEST/พิมพ์ทดสอบ   : ทดสอบเครื่องพิมพ์ USB โดยตรง
+สถานะ                  : ดู Wi-Fi, MQTT และสถานะคิว A
+ช่วยเหลือ หรือ ?       : แสดงรายการคำสั่งนี้
+หมายเหตุ: เปลี่ยน 123456 เป็น OTP จริงจาก Test Patient Tool
+============================================
+
+[Wi-Fi] กำลังเชื่อมต่อเครือข่าย clinicIoT...
+[ระบบ] เริ่มต้นระบบเรียบร้อย
+[HX711] RAW=54207
+[VL53L1X] อ่านค่าระยะไม่สำเร็จ
+[Wi-Fi] กำลังเชื่อมต่อเครือข่าย clinicIoT...
+[HX711] RAW=54216
+[VL53L1X] Invalid range: signal fail
+[VL53L1X] อ่านค่าระยะไม่สำเร็จ
+[Wi-Fi] กำลังเชื่อมต่อเครือข่าย clinicIoT...
+[HX711] RAW=54220
+[VL53L1X] Distance=1985 mm
+[Wi-Fi] กำลังเชื่อมต่อเครือข่าย clinicIoT...
+[HX711] RAW=54161
+[VL53L1X] Distance=1988 mm
+[Wi-Fi] กำลังเชื่อมต่อเครือข่าย clinicIoT...
+[HX711] RAW=54165
+[VL53L1X] Distance=1987 mm
+[Wi-Fi] กำลังเชื่อมต่อเครือข่าย clinicIoT...
+[HX711] RAW=54132
+[VL53L1X] Distance=1979 mm
+[Wi-Fi] กำลังเชื่อมต่อเครือข่าย clinicIoT...
+[HX711] RAW=54165
+[VL53L1X] Distance=1985 mm
+[Wi-Fi] กำลังเชื่อมต่อเครือข่าย clinicIoT...
+[HX711] RAW=54131
+[VL53L1X] Distance=1984 mm
+[Wi-Fi] กำลังเชื่อมต่อเครือข่าย clinicIoT...
+[HX711] RAW=54168
+[VL53L1X] Distance=1991 mm
+[Wi-Fi] กำลังเชื่อมต่อเครือข่าย clinicIoT...
+[HX711] RAW=54075
+[VL53L1X] Distance=1984 mm
+[Wi-Fi] กำลังเชื่อมต่อเครือข่าย clinicIoT...
+[HX711] RAW=54160
+[VL53L1X] Distance=1984 mm
+[Wi-Fi] กำลังเชื่อมต่อเครือข่าย clinicIoT...
+[HX711] RAW=54183
+[VL53L1X] Distance=1984 mm
+[Wi-Fi] กำลังเชื่อมต่อเครือข่าย clinicIoT...
+[HX711] RAW=54103
+[VL53L1X] Distance=1986 mm
+[Wi-Fi] กำลังเชื่อมต่อเครือข่าย clinicIoT...
+[HX711] RAW=54143
+[VL53L1X] Distance=1983 mm
+[Wi-Fi] กำลังเชื่อมต่อเครือข่าย clinicIoT...
+[HX711] RAW=54224
+[VL53L1X] Distance=1984 mm
+[Wi-Fi] กำลังเชื่อมต่อเครือข่าย clinicIoT...
+[HX711] RAW=54053
+[VL53L1X] Distance=1987 mm
+[Wi-Fi] กำลังเชื่อมต่อเครือข่าย clinicIoT...
+[HX711] RAW=54244
+[VL53L1X] Distance=1987 mm
+[Wi-Fi] กำลังเชื่อมต่อเครือข่าย clinicIoT...
+[HX711] RAW=54263
+[VL53L1X] Distance=1983 mm
+[Wi-Fi] กำลังเชื่อมต่อเครือข่าย clinicIoT...
+[HX711] RAW=54214
+[VL53L1X] Distance=1992 mm
+[Wi-Fi] กำลังเชื่อมต่อเครือข่าย clinicIoT...
+[HX711] RAW=54129
+[VL53L1X] Distance=1986 mm
+[Wi-Fi] กำลังเชื่อมต่อเครือข่าย clinicIoT...
+[HX711] RAW=54175
+[VL53L1X] Distance=1986 mm
+[Wi-Fi] กำลังเชื่อมต่อเครือข่าย clinicIoT...
+[HX711] RAW=54127
+[VL53L1X] Distance=1988 mm
+[Wi-Fi] กำลังเชื่อมต่อเครือข่าย clinicIoT...
+[HX711] RAW=53843
+[VL53L1X] อ่านค่าระยะไม่สำเร็จ
+[Wi-Fi] กำลังเชื่อมต่อเครือข่าย clinicIoT...
+[HX711] RAW=53858
+[VL53L1X] Invalid range: signal fail
+[VL53L1X] อ่านค่าระยะไม่สำเร็จ
+[Wi-Fi] กำลังเชื่อมต่อเครือข่าย clinicIoT...
+[HX711] RAW=53864
+[VL53L1X] Distance=1984 mm
+[Wi-Fi] กำลังเชื่อมต่อเครือข่าย clinicIoT...
+[HX711] RAW=53839
+[VL53L1X] Distance=1990 mm
+[Wi-Fi] กำลังเชื่อมต่อเครือข่าย clinicIoT...
+[HX711] RAW=53851
+[VL53L1X] Distance=1985 mm
+[Wi-Fi] กำลังเชื่อมต่อเครือข่าย clinicIoT...
+[HX711] RAW=53730
+[VL53L1X] Distance=1985 mm
+[Wi-Fi] กำลังเชื่อมต่อเครือข่าย clinicIoT...
+[HX711] RAW=53792
+[VL53L1X] Distance=1984 mm
+[Wi-Fi] กำลังเชื่อมต่อเครือข่าย clinicIoT...
+[HX711] RAW=53662
+[VL53L1X] Distance=1986 mm
+[Wi-Fi] กำลังเชื่อมต่อเครือข่าย clinicIoT...
+[HX711] RAW=53675
+[VL53L1X] อ่านค่าระยะไม่สำเร็จ
+[Wi-Fi] กำลังเชื่อมต่อเครือข่าย clinicIoT...
+[HX711] RAW=53623
+[VL53L1X] Invalid range: signal fail
+[VL53L1X] อ่านค่าระยะไม่สำเร็จ
+[Wi-Fi] กำลังเชื่อมต่อเครือข่าย clinicIoT...
+[HX711] RAW=53680
+[190988][E][Wire.cpp:513] requestFrom(): i2cRead returned Error -1
+[VL53L1X] Invalid range: no update
+[VL53L1X] อ่านค่าระยะไม่สำเร็จ
+[Wi-Fi] กำลังเชื่อมต่อเครือข่าย clinicIoT...
+[HX711] RAW=53622
+[197044][E][Wire.cpp:513] requestFrom(): i2cRead returned Error 263
+[VL53L1X] Invalid range: no update
+[VL53L1X] อ่านค่าระยะไม่สำเร็จ
+[Wi-Fi] กำลังเชื่อมต่อเครือข่าย clinicIoT...
+[HX711] RAW=53494
+[VL53L1X] Invalid range: signal fail
+[VL53L1X] อ่านค่าระยะไม่สำเร็จ

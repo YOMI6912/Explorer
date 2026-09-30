@@ -1,0 +1,257 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <title>รายงานสรุประบบคิวออนไลน์ A</title>
+  <style>
+    @page { size: A4; margin: 14mm 14mm 16mm; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      color: #182235;
+      background: #fff;
+      font-family: Tahoma, "Leelawadee UI", sans-serif;
+      font-size: 10pt;
+      line-height: 1.5;
+    }
+    h1, h2, h3, p { margin-top: 0; }
+    h1 { margin-bottom: 5px; color: #16449d; font-size: 23pt; line-height: 1.18; }
+    h2 {
+      margin: 18px 0 8px;
+      padding-bottom: 5px;
+      color: #16449d;
+      border-bottom: 2px solid #2b67e8;
+      font-size: 14.5pt;
+      break-after: avoid;
+    }
+    h3 { margin: 12px 0 5px; color: #2755aa; font-size: 11.5pt; break-after: avoid; }
+    p { margin-bottom: 7px; }
+    ul, ol { margin: 5px 0 10px; padding-left: 23px; }
+    li { margin-bottom: 3px; }
+    code {
+      padding: 1px 4px;
+      border-radius: 4px;
+      color: #163d88;
+      background: #edf3ff;
+      font-family: Consolas, monospace;
+      font-size: 8.8pt;
+    }
+    pre {
+      margin: 6px 0 11px;
+      padding: 9px 11px;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      border: 1px solid #d8e1f0;
+      border-radius: 8px;
+      background: #f7f9fc;
+      font: 8.2pt/1.4 Consolas, monospace;
+      break-inside: avoid;
+    }
+    table { width: 100%; margin: 7px 0 11px; border-collapse: collapse; font-size: 9.1pt; }
+    th, td { padding: 6px 7px; border: 1px solid #d7dfed; vertical-align: top; }
+    th { color: #fff; background: #2862dc; text-align: left; }
+    tr:nth-child(even) td { background: #f8faff; }
+    .cover {
+      padding: 22px 24px;
+      border: 1px solid #c9dbff;
+      border-radius: 15px;
+      background: linear-gradient(135deg, #eaf2ff 0%, #fff 72%);
+    }
+    .subtitle { margin: 0; color: #53627a; font-size: 11.5pt; }
+    .meta { margin-top: 14px; color: #58667c; }
+    .badge {
+      display: inline-block;
+      margin-top: 12px;
+      padding: 7px 12px;
+      color: #08763d;
+      background: #ddf7e8;
+      border: 1px solid #a8e2c0;
+      border-radius: 999px;
+      font-weight: 700;
+    }
+    .summary, .info, .warning {
+      margin-top: 13px;
+      padding: 11px 13px;
+      border-radius: 8px;
+      break-inside: avoid;
+    }
+    .summary { border-left: 5px solid #2b67e8; background: #f2f6ff; }
+    .info { border: 1px solid #bcd2ff; background: #f4f8ff; }
+    .warning { border: 1px solid #ffd18a; background: #fff8e8; }
+    .pass { color: #08763d; font-weight: 700; white-space: nowrap; }
+    .done { color: #1555bd; font-weight: 700; white-space: nowrap; }
+    .pending { color: #a55a00; font-weight: 700; white-space: nowrap; }
+    .no { color: #b52b35; font-weight: 700; white-space: nowrap; }
+    .small { color: #667287; font-size: 8.8pt; }
+    .avoid { break-inside: avoid; }
+  </style>
+</head>
+<body>
+  <section class="cover">
+    <h1>รายงานสรุประบบคิวออนไลน์ A</h1>
+    <p class="subtitle">ClinicCare Scale — ESP32-S3 / MQTT / Backend / Web</p>
+    <div class="badge">Core Software แบบไม่ต่ออุปกรณ์: ผ่านแล้ว</div>
+    <p class="meta">
+      วันที่จัดทำ: 16 กันยายน 2569<br>
+      Device ID: <code>SCALE-001</code><br>
+      Firmware บนบอร์ด: <code>esp32-s3-n16r8</code> (โหมดปกติ ไม่เปิดอุปกรณ์จริง)<br>
+      ขอบเขตผลทดสอบ: OTP จริง + ค่าวัดจำลอง + Backend + Web + Print Protocol
+    </p>
+  </section>
+
+  <div class="summary">
+    <strong>สรุป:</strong> คิวออนไลน์ A ทำงานครบตั้งแต่ตรวจ OTP, รับ Measurement Session,
+    ส่งน้ำหนัก/ส่วนสูง, รับหมายเลขคิว A, รับ BMI จาก Backend, รับ Print Job และป้องกันข้อมูลซ้ำเมื่อ ACK สูญหาย
+    ระบบจริงยังเหลือการต่อและคาลิเบรตเซนเซอร์กับเครื่องพิมพ์ รวมทั้งงานแก้ Print Outbox ฝั่ง Backend
+  </div>
+
+  <h2>1. ลำดับการทำงาน</h2>
+  <ol>
+    <li>ผู้ป่วยมีการจองที่อนุมัติแล้วและได้รับ OTP สำหรับวันนัด</li>
+    <li>ESP32 ส่ง OTP ไปยัง <code>/otp-verify</code> พร้อม <code>request_id</code> ใหม่</li>
+    <li>Backend ตอบ <code>/otp-result</code> พร้อม Session, หมายเลขคิว A และเวลาหมดอายุ</li>
+    <li>ESP32 ตรวจ Session/เวลา/คิว แล้วส่งน้ำหนักและส่วนสูงไปยัง <code>/measurements</code></li>
+    <li>Backend บันทึกค่า คำนวณ BMI และตอบ <code>/measurement-ack</code></li>
+    <li>Backend ส่ง <code>/print</code>; ESP32 พิมพ์และตอบ <code>/print-ack</code></li>
+  </ol>
+
+  <h2>2. MQTT Contract</h2>
+  <table>
+    <thead><tr><th style="width:30%">ทิศทาง</th><th style="width:43%">Topic</th><th>หน้าที่</th></tr></thead>
+    <tbody>
+      <tr><td>ESP32 → Backend</td><td><code>.../otp-verify</code></td><td>ตรวจ OTP</td></tr>
+      <tr><td>Backend → ESP32</td><td><code>.../otp-result</code></td><td>ส่ง Session และคิว A</td></tr>
+      <tr><td>ESP32 → Backend</td><td><code>.../measurements</code></td><td>ส่งน้ำหนัก/ส่วนสูง</td></tr>
+      <tr><td>Backend → ESP32</td><td><code>.../measurement-ack</code></td><td>ยืนยันการบันทึก</td></tr>
+      <tr><td>Backend → ESP32</td><td><code>.../print</code></td><td>ส่งงานพิมพ์และ BMI</td></tr>
+      <tr><td>ESP32 → Backend</td><td><code>.../print-ack</code></td><td>แจ้งผลการพิมพ์</td></tr>
+    </tbody>
+  </table>
+  <p>Prefix เต็มคือ <code>clinic/v1/devices/SCALE-001</code>; ใช้ MQTT 3.1.1 ผ่าน TLS พอร์ต 8883, QoS 1 และ Retain false</p>
+
+  <h3>OTP Verify</h3>
+  <pre>{
+  "schema_version": "1.0",
+  "request_id": "REQ-SCALE-001-...",
+  "device_id": "SCALE-001",
+  "otp": "******"
+}</pre>
+
+  <h3>Online Measurement</h3>
+  <pre>{
+  "schema_version": "1.0",
+  "message_id": "MSG-A-SCALE-001-...",
+  "device_id": "SCALE-001",
+  "mode": "online",
+  "measurement_session_id": "...",
+  "measured_at": "2026-09-15T20:09:31Z",
+  "weight": 60,
+  "height": 170
+}</pre>
+  <p>Firmware ไม่คำนวณ BMI โดย Backend เป็นผู้คำนวณและส่งมากับ Print Job</p>
+
+  <h2>3. ความสามารถและสถานะ</h2>
+  <table>
+    <thead><tr><th>รายการ</th><th style="width:18%">สถานะ</th><th>รายละเอียด</th></tr></thead>
+    <tbody>
+      <tr><td>ตรวจรูปแบบ OTP</td><td class="pass">ผ่านจริง</td><td>ต้องเป็นตัวเลข 6 หลัก</td></tr>
+      <tr><td>Correlation ของ OTP</td><td class="pass">ผ่านจริง</td><td>รับเฉพาะ request_id ที่ตรงกับคำขอปัจจุบัน</td></tr>
+      <tr><td>OTP ถูกต้อง</td><td class="pass">ผ่านจริง</td><td>ได้รับ accepted, Session และคิว A002</td></tr>
+      <tr><td>OTP ผิด/ผิดวัน/ใช้ซ้ำ</td><td class="pass">ผ่านจริง</td><td>Backend ตอบ INVALID_OTP และ Firmware ไม่ส่ง Measurement</td></tr>
+      <tr><td>Session expiry</td><td class="done">แก้และ Build ผ่าน</td><td>อ่าน expires_at และไม่ยอมวัดเมื่อ Session หมดอายุ</td></tr>
+      <tr><td>เวลา UTC</td><td class="pass">ผ่านจริง</td><td>ใช้ NTP และส่ง measured_at แบบ UTC</td></tr>
+      <tr><td>Measurement validation</td><td class="pass">ผ่านจริง</td><td>น้ำหนัก 1–300 kg, ส่วนสูง 30–250 cm</td></tr>
+      <tr><td>Measurement ACK</td><td class="pass">ผ่านจริง</td><td>ตรวจ message_id, measurement_id และหมายเลขคิว A</td></tr>
+      <tr><td>คิวจาก OTP ตรงกับ ACK</td><td class="done">แก้และ Build ผ่าน</td><td>หากหมายเลขไม่ตรงจะเก็บ Pending และไม่ยอมรับ ACK</td></tr>
+      <tr><td>NVS Pending</td><td class="pass">ผ่านพื้นฐาน</td><td>เก็บ payload/message_id ก่อนส่งและส่งใหม่หลัง reconnect</td></tr>
+      <tr><td>ACK สูญหาย/Duplicate</td><td class="pass">ผ่านจริง</td><td>ส่ง message_id เดิมและได้ duplicate พร้อม Measurement/Queue เดิม</td></tr>
+      <tr><td>Retry backoff</td><td class="done">แก้และ Build ผ่าน</td><td>หน่วง 10, 20, 40 และสูงสุด 60 วินาที</td></tr>
+      <tr><td>Print pending watchdog</td><td class="done">แก้และ Build ผ่าน</td><td>เตือนหาก print_pending=true แต่ไม่มี /print ภายใน 30 วินาที</td></tr>
+      <tr><td>รับ Print Job</td><td class="pass">ผ่านจริง</td><td>ได้รับ Queue/W/H/BMI และตรวจ schema</td></tr>
+      <tr><td>กันพิมพ์ซ้ำ</td><td class="pass">ผ่านจริง</td><td>จำ print_job_id 16 รายการล่าสุดใน NVS</td></tr>
+      <tr><td>พิมพ์กระดาษจริง</td><td class="no">ยังไม่ทดสอบ</td><td>ไม่มี Printer จึงตอบ PRINTER_NOT_CONNECTED ตามปกติ</td></tr>
+    </tbody>
+  </table>
+
+  <h2>4. หลักฐานการทดสอบจริง</h2>
+  <h3>รอบปกติ</h3>
+  <ul>
+    <li>OTP accepted และได้ <code>queue_number: A002</code></li>
+    <li>Backend บันทึก <code>measurement_id: 67</code></li>
+    <li>หน้าเว็บแสดง Weight 60.00, Height 170.00 และ BMI 20.76</li>
+    <li>ได้รับ Print Job และตอบ <code>failed / PRINTER_NOT_CONNECTED</code> เพราะยังไม่มีเครื่องพิมพ์</li>
+  </ul>
+
+  <h3>รอบจำลอง Measurement ACK สูญหาย</h3>
+  <ul>
+    <li>Backend ตอบ accepted: <code>measurement_id: 68</code>, <code>queue_number: A002</code></li>
+    <li>Firmware จงใจข้าม ACK แรกและเก็บ Pending</li>
+    <li>ครบ 10 วินาที Firmware ส่ง payload และ message_id เดิม</li>
+    <li>Backend ตอบ duplicate พร้อม Measurement 68 และ A002 เดิม</li>
+    <li>Firmware ล้าง Pending และกลับสถานะพร้อมเริ่ม</li>
+  </ul>
+  <div class="info">
+    การทดสอบหลายรอบด้วย OTP ใหม่สามารถสร้าง Measurement ใหม่ในคิวเดิมได้ตามงานทดสอบ
+    แต่ retry ของ Measurement เดิมต้องไม่สร้าง Measurement หรือคิวซ้ำ
+  </div>
+
+  <h2>5. การแก้ไข Firmware รอบล่าสุด</h2>
+  <ul>
+    <li>บังคับ ACK แบบ accepted/duplicate ต้องมี <code>measurement_id &gt; 0</code></li>
+    <li>อ่านและตรวจ <code>expires_at</code>; เพิ่มเวลารอ OTP จาก 15 เป็น 30 วินาที</li>
+    <li>เก็บคิวจาก OTP และตรวจว่าตรงกับคิวใน Measurement ACK</li>
+    <li>เพิ่ม retry backoff สูงสุด 60 วินาทีโดยไม่ลบ Pending</li>
+    <li>เพิ่มคำเตือนเมื่อ Backend ไม่ส่ง Print Job ภายใน 30 วินาที</li>
+    <li>ตั้ง Environment ปกติแบบไม่เปิดอุปกรณ์เป็นค่าเริ่มต้น</li>
+    <li>เพิ่ม Environment <code>esp32-s3-online-retry-test</code> สำหรับทดสอบเฉพาะกิจ</li>
+    <li>อัปโหลด Firmware ปกติกลับลง COM19 หลังจบทดสอบ</li>
+  </ul>
+
+  <h3>ผล Build ล่าสุด</h3>
+  <table>
+    <thead><tr><th>Environment</th><th>RAM</th><th>Flash</th><th>ผล</th></tr></thead>
+    <tbody>
+      <tr><td>esp32-s3-n16r8</td><td>14.5%</td><td>14.4%</td><td class="pass">SUCCESS</td></tr>
+      <tr><td>esp32-s3-hardware-test</td><td>14.7%</td><td>15.4%</td><td class="pass">SUCCESS</td></tr>
+      <tr><td>esp32-s3-online-retry-test</td><td>14.5%</td><td>14.4%</td><td class="pass">SUCCESS</td></tr>
+    </tbody>
+  </table>
+
+  <h2>6. งานที่ยังเหลือ</h2>
+  <table>
+    <thead><tr><th style="width:23%">เจ้าของงาน</th><th>รายการ</th><th style="width:18%">สถานะ</th></tr></thead>
+    <tbody>
+      <tr><td>Backend</td><td>หยุดหรือจำกัดการส่ง Print Job เดิมซ้ำหลังได้รับ failed; เพิ่ม retry/backoff/max attempts</td><td class="pending">ต้องแก้อีกระบบ</td></tr>
+      <tr><td>Backend</td><td>แยก OTP error เป็น OTP_EXPIRED, OTP_USED, OTP_NOT_ACTIVE_YET เพื่อวิเคราะห์ง่าย</td><td class="pending">ควรปรับ</td></tr>
+      <tr><td>Backend/DB</td><td>ยืนยัน unique constraint/idempotency ของ device_id + message_id</td><td class="pending">ต้องยืนยัน</td></tr>
+      <tr><td>Web</td><td>ยืนยันว่า retry message_id เดิมแสดงเพียงหนึ่ง Measurement และผูก A002 ถูกต้อง</td><td class="pending">ต้องยืนยัน</td></tr>
+      <tr><td>Firmware Test</td><td>ทดสอบรีสตาร์ตระหว่างคิว A รอ Measurement ACK โดยเฉพาะ</td><td class="pending">ยังไม่ทดสอบตรง</td></tr>
+      <tr><td>Hardware</td><td>คาลิเบรต HX711/Load Cell และกำหนดความสูงติดตั้ง VL53L1X</td><td class="no">ยังไม่ทำ</td></tr>
+      <tr><td>Hardware</td><td>ทดสอบ Keypad, LCD, USB Printer และกระดาษจริง</td><td class="no">ยังไม่ทำ</td></tr>
+      <tr><td>Security/Ops</td><td>ยืนยัน MQTT ACL, Credential แยกต่ออุปกรณ์, CA certificate และ Client ID ไม่ซ้ำ</td><td class="pending">ก่อน Production</td></tr>
+    </tbody>
+  </table>
+
+  <div class="warning">
+    <strong>ขอบเขตความสำเร็จ:</strong> สถานะ <em>ผ่าน</em> ในรายงานนี้หมายถึง Software End-to-End โดยใช้ OTP จริงและค่าวัดจำลอง
+    ไม่รวมความแม่นยำของเซนเซอร์หรือผลการพิมพ์กระดาษจริง
+  </div>
+
+  <h2>7. เช็กลิสต์ก่อน Production</h2>
+  <ul>
+    <li>☐ ทดสอบ Queue A reboot/reconnect ขณะ Pending</li>
+    <li>☐ ทดสอบ Session หมดอายุก่อนวัดจริง</li>
+    <li>☐ ทดสอบ ACK ผิด request_id/message_id/measurement_id/queue_number</li>
+    <li>☐ ตรวจ DB ว่า message_id เดิมมี Measurement เดียว</li>
+    <li>☐ แก้และทดสอบ Backend Print Outbox</li>
+    <li>☐ คาลิเบรตและทดสอบเซนเซอร์จริง</li>
+    <li>☐ พิมพ์บัตรจริงและได้ print-ack สถานะ printed</li>
+    <li>☐ ทดสอบไฟดับ เน็ตหลุด และ Broker/Backend หยุดชั่วคราว</li>
+    <li>☐ ตรวจ MQTT ACL และ Credential สำหรับเครื่อง Production</li>
+  </ul>
+
+  <p class="small" style="margin-top:18px;text-align:center">
+    สถานะรวม: Queue A Core Software ผ่านแล้ว — Physical Hardware / Production Readiness ยังไม่ครบ
+  </p>
+</body>
+</html>

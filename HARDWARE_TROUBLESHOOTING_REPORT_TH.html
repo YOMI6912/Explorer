@@ -1,0 +1,282 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>รายงานปัญหาฮาร์ดแวร์และแนวทางแก้ไข</title>
+  <style>
+    @page { size: A4; margin: 14mm 13mm 15mm; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Noto Sans Thai", "Leelawadee UI", Tahoma, sans-serif;
+      color: #172033;
+      font-size: 10.5pt;
+      line-height: 1.55;
+      background: #fff;
+    }
+    h1, h2, h3, p { margin-top: 0; }
+    h1 { font-size: 25pt; line-height: 1.25; margin-bottom: 10px; }
+    h2 {
+      font-size: 16pt;
+      color: #174ea6;
+      border-bottom: 2px solid #d8e6ff;
+      padding-bottom: 5px;
+      margin: 22px 0 10px;
+      break-after: avoid;
+    }
+    h3 { font-size: 12pt; margin: 14px 0 6px; break-after: avoid; }
+    p { margin-bottom: 8px; }
+    ul, ol { margin: 6px 0 10px 22px; padding: 0; }
+    li { margin-bottom: 4px; }
+    table { width: 100%; border-collapse: collapse; margin: 8px 0 14px; break-inside: avoid; }
+    th, td { border: 1px solid #cfd7e6; padding: 6px 8px; vertical-align: top; }
+    th { background: #eaf1ff; color: #153d78; text-align: left; }
+    code, pre {
+      font-family: Consolas, "Courier New", monospace;
+      background: #f3f6fa;
+      color: #14243d;
+    }
+    code { padding: 1px 4px; border-radius: 3px; }
+    pre {
+      white-space: pre-wrap;
+      border: 1px solid #d8dfeb;
+      border-left: 4px solid #3b82f6;
+      padding: 9px 11px;
+      margin: 7px 0 12px;
+      break-inside: avoid;
+      font-size: 9.4pt;
+    }
+    .cover {
+      min-height: 255mm;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      padding: 20mm 10mm;
+      page-break-after: always;
+    }
+    .kicker { color: #2563eb; font-weight: 700; letter-spacing: .05em; }
+    .subtitle { font-size: 14pt; color: #475569; max-width: 650px; }
+    .meta { margin-top: 28px; padding: 14px 16px; background: #f4f8ff; border-left: 5px solid #2563eb; }
+    .summary-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin: 12px 0; }
+    .card { border: 1px solid #dbe3ef; border-radius: 7px; padding: 10px; break-inside: avoid; }
+    .pass { color: #087a43; font-weight: 700; }
+    .pending { color: #b25b00; font-weight: 700; }
+    .fail { color: #b42318; font-weight: 700; }
+    .note { background: #fff8df; border-left: 4px solid #f0a000; padding: 8px 10px; margin: 9px 0; break-inside: avoid; }
+    .ok { background: #eaf8f0; border-left: 4px solid #159455; padding: 8px 10px; margin: 9px 0; break-inside: avoid; }
+    .danger { background: #fff0ef; border-left: 4px solid #d92d20; padding: 8px 10px; margin: 9px 0; break-inside: avoid; }
+    .section { break-inside: avoid-page; }
+    .page-break { page-break-before: always; }
+    .small { font-size: 9pt; color: #526174; }
+    .footer-note { margin-top: 20px; color: #64748b; font-size: 9pt; }
+  </style>
+</head>
+<body>
+  <section class="cover">
+    <div class="kicker">ESP32-S3 CLINIC SCALE</div>
+    <h1>รายงานปัญหาฮาร์ดแวร์<br>และแนวทางแก้ไข</h1>
+    <p class="subtitle">สรุปผลการตรวจ Load Cell, HX711, คีย์แพด 4×4 ผ่าน PCF8574 และระบบ I²C พร้อมขั้นตอนวิเคราะห์และเกณฑ์ตรวจรับ</p>
+    <div class="meta">
+      <strong>โครงการ:</strong> ESP32S3 Clinic Modular<br>
+      <strong>วันที่จัดทำ:</strong> 27 กันยายน 2569<br>
+      <strong>ขอบเขต:</strong> ปัญหาที่พบจากการทดสอบฮาร์ดแวร์จริงและรายการที่ต้องตรวจต่อ
+    </div>
+  </section>
+
+  <h2>1. ภาพรวมผลการตรวจสอบ</h2>
+  <div class="summary-grid">
+    <div class="card"><strong>ESP32-S3</strong><br><span class="pass">ผ่าน</span> — Upload และ Serial COM19 ทำงาน</div>
+    <div class="card"><strong>HX711</strong><br><span class="pass">ผ่านเบื้องต้น</span> — อ่าน RAW และตอบสนองต่อแรงกด</div>
+    <div class="card"><strong>Load Cell</strong><br><span class="pass">ผ่านการอ่าน RAW</span> — ยังต้อง Tare/Calibration</div>
+    <div class="card"><strong>PCF8574 Keypad</strong><br><span class="pending">ยังไม่ผ่าน</span> — SCL ถูกดึง LOW</div>
+    <div class="card"><strong>LCD I²C</strong><br><span class="pending">ยังไม่ยืนยัน</span> — ยังไม่พบ 0x27 ในการทดสอบล่าสุด</div>
+    <div class="card"><strong>VL53L1X</strong><br><span class="pending">ยังไม่ยืนยัน</span> — ต้องแก้ I²C Bus ก่อน</div>
+    <div class="card"><strong>USB Printer</strong><br><span class="pending">ยังไม่ทดสอบจริง</span> — ต้องใช้เครื่องพิมพ์จริง</div>
+    <div class="card"><strong>I²C Bus</strong><br><span class="fail">ผิดปกติ</span> — SDA=HIGH, SCL=LOW</div>
+  </div>
+
+  <h2>2. ปัญหา HX711 อ่านค่าคงที่ −8388608</h2>
+  <h3>2.1 อาการ</h3>
+  <pre>[HX711] RAW=-8388608
+[HX711] RAW=-8388608</pre>
+  <p>ค่า −8,388,608 เป็นค่าต่ำสุดของ ADC แบบ signed 24-bit แสดงว่า ESP32 ติดต่อกับ HX711 ได้ แต่ช่องสัญญาณอนาล็อกอิ่มตัวทางลบ</p>
+
+  <h3>2.2 หลักฐานจากการวัดแรงดัน</h3>
+  <table>
+    <thead><tr><th>จุดวัด</th><th>ค่าที่ได้</th><th>การวิเคราะห์</th></tr></thead>
+    <tbody>
+      <tr><td>E+ เทียบ E−</td><td>3.07V</td><td>มีไฟเลี้ยง Bridge</td></tr>
+      <tr><td>A+ เทียบ E−</td><td>1.31V</td><td>ไม่สมดุล</td></tr>
+      <tr><td>A− เทียบ E−</td><td>2.15V</td><td>ไม่สมดุล</td></tr>
+      <tr><td>A+ เทียบ A−</td><td>ประมาณ 0.83V</td><td>สูงผิดปกติ ควรอยู่ระดับไม่กี่ mV</td></tr>
+    </tbody>
+  </table>
+  <div class="danger"><strong>ข้อสรุป:</strong> ปัญหาไม่ได้เกิดจากค่า Calibration ในซอฟต์แวร์ แต่เกิดจากการจัดคู่สายของ Wheatstone Bridge ผิดหรือสายขาด</div>
+
+  <h3>2.3 ผลการวัดความต้านทาน</h3>
+  <table>
+    <thead><tr><th>คู่สาย</th><th>ความต้านทาน</th><th>หมายเหตุ</th></tr></thead>
+    <tbody>
+      <tr><td>แดง–ดำ</td><td>311Ω</td><td>คู่ไขว้</td></tr>
+      <tr><td>แดง–เขียว</td><td>349Ω</td><td>คู่สัญญาณที่เป็นไปได้</td></tr>
+      <tr><td>แดง–ขาว</td><td>262Ω</td><td>คู่ไขว้</td></tr>
+      <tr><td>ดำ–เขียว</td><td>311Ω</td><td>คู่ไขว้</td></tr>
+      <tr><td>ดำ–ขาว</td><td>399Ω</td><td>คู่ไฟเลี้ยงที่เป็นไปได้</td></tr>
+      <tr><td>เขียว–ขาว</td><td>262Ω</td><td>คู่ไขว้</td></tr>
+    </tbody>
+  </table>
+
+  <h3>2.4 วิธีแก้ไข</h3>
+  <pre>ดำ    → E+
+ขาว   → E−
+แดง   → A+
+เขียว → A−</pre>
+  <p>หากน้ำหนักเพิ่มแล้วค่า RAW ลดลง ให้ปิดไฟและสลับเฉพาะ A+ กับ A− โดยไม่เปลี่ยนคู่ไฟเลี้ยง</p>
+
+  <h3>2.5 ผลหลังแก้ไข</h3>
+  <table>
+    <thead><tr><th>สภาวะ</th><th>ค่าที่พบ</th></tr></thead>
+    <tbody>
+      <tr><td>ไม่มีแรงกด</td><td>ประมาณ 137,000–144,000</td></tr>
+      <tr><td>ออกแรงกด</td><td>เปลี่ยนสูงสุดประมาณ 304,000</td></tr>
+      <tr><td>ปล่อยแรง</td><td>กลับมาใกล้ค่าตั้งต้น</td></tr>
+    </tbody>
+  </table>
+  <div class="ok"><strong>สถานะ:</strong> HX711 และ Load Cell ผ่านการทดสอบอ่านค่า RAW แล้ว ขั้นถัดไปคือ Tare และ Calibration เป็นกิโลกรัม</div>
+
+  <div class="page-break"></div>
+  <h2>3. ปัญหาไม่พบคีย์แพด PCF8574</h2>
+  <h3>3.1 อาการ</h3>
+  <pre>[KEYPAD] Initializing PCF8574 matrix keypad...
+[KEYPAD] ERROR: PCF8574 not found</pre>
+  <p>ไดรเวอร์ใหม่รองรับ PCF8574/PCF8574A และสแกนช่วง address ที่เกี่ยวข้องแล้ว แต่ไม่มีอุปกรณ์ตอบกลับ</p>
+
+  <h3>3.2 ผลจาก I²C Scanner</h3>
+  <pre>[BUS] SDA=HIGH, SCL=LOW
+[RESULT] I2C bus is stuck LOW; address scan skipped</pre>
+  <p>ระบบยังไม่สามารถระบุ address ของคีย์แพดได้ เพราะ SCL/GPIO9 ถูกดึง LOW ค้าง ทำให้ส่งสัญญาณ Clock ไม่ได้</p>
+
+  <h3>3.3 สาเหตุที่เป็นไปได้</h3>
+  <ol>
+    <li>สาย SCL ต่อเข้ากับ GND หรือเสียบหัวกลับด้าน</li>
+    <li>ลำดับขาบนโมดูลไม่ตรงกับลำดับขาบน PCB</li>
+    <li>โมดูลไม่ได้รับไฟ 3.3V หรือ GND ไม่ร่วมกัน</li>
+    <li>มีตะกั่ว ลายทองแดง หรือสายไฟลัดวงจร</li>
+    <li>อุปกรณ์ I²C ตัวอื่นดึง SCL ลงค้าง</li>
+    <li>โมดูล PCF8574 ชำรุด</li>
+  </ol>
+
+  <h3>3.4 การต่อสายที่ถูกต้อง</h3>
+  <table>
+    <thead><tr><th>โมดูล PCF8574</th><th>PCB/ESP32-S3</th></tr></thead>
+    <tbody>
+      <tr><td>VCC</td><td>3.3V / Z4-2</td></tr>
+      <tr><td>GND</td><td>GND / Z4-1</td></tr>
+      <tr><td>SDA</td><td>GPIO8 / Z4-3</td></tr>
+      <tr><td>SCL</td><td>GPIO9 / Z4-4</td></tr>
+    </tbody>
+  </table>
+  <div class="note"><strong>ข้อควรระวัง:</strong> ให้ต่อโดยดูชื่อขา VCC/GND/SDA/SCL ห้ามเสียบตามตำแหน่งตรง ๆ หากลำดับบนโมดูลไม่ตรงกับ Z4</div>
+
+  <h3>3.5 วิธีแยกตำแหน่งปัญหา</h3>
+  <ol>
+    <li>ปิดไฟและถอด PCF8574 ออกจาก PCB</li>
+    <li>เปิด I²C Scanner แล้วตรวจ SDA/SCL อีกครั้ง</li>
+    <li>ถ้า SCL กลับเป็น HIGH ปัญหาอยู่ที่โมดูล สาย หรือลำดับขั้ว</li>
+    <li>ถ้า SCL ยัง LOW ปัญหาอยู่ที่ PCB หรืออุปกรณ์ I²C ตัวอื่น</li>
+    <li>ถอด LCD และ VL53L1X ทีละตัวแล้วสแกนซ้ำ</li>
+    <li>ขณะปิดไฟ วัดความต้านทาน SCL–GND หากใกล้ 0Ω แสดงว่ามีการลัดวงจร</li>
+  </ol>
+  <div class="pending">สถานะ: ยังไม่ผ่าน ต้องแก้ SCL LOW ก่อนตรวจ address และปุ่มทั้ง 16 ปุ่ม</div>
+
+  <h2>4. ความเสี่ยงเรื่อง I²C Address ชนกัน</h2>
+  <table>
+    <thead><tr><th>อุปกรณ์</th><th>Address ที่กำหนด/คาดหวัง</th></tr></thead>
+    <tbody>
+      <tr><td>PCF8574 Keypad</td><td>แนะนำ 0x20</td></tr>
+      <tr><td>LCD I²C</td><td>0x27</td></tr>
+      <tr><td>VL53L1X</td><td>0x29</td></tr>
+    </tbody>
+  </table>
+  <p>PCF8574 ใช้ช่วง 0x20–0x27 และ PCF8574A ใช้ช่วง 0x38–0x3F จึงไม่ควรตั้งคีย์แพดเป็น 0x27 เพราะจะชนกับ LCD</p>
+  <pre>A0=LOW, A1=LOW, A2=LOW → PCF8574 address 0x20</pre>
+
+  <h2>5. ผลกระทบจากการใช้ I²C Bus ร่วมกัน</h2>
+  <p>LCD, PCF8574 และ VL53L1X ใช้ SDA=GPIO8 และ SCL=GPIO9 ร่วมกัน หากอุปกรณ์เพียงตัวเดียวต่อผิดหรือดึงสายลง LOW อุปกรณ์ทุกตัวบนบัสจะหยุดทำงาน</p>
+  <h3>ลำดับทดสอบที่แนะนำ</h3>
+  <ol>
+    <li>ESP32 โดยไม่ต่ออุปกรณ์ — SDA/SCL ต้อง HIGH</li>
+    <li>ต่อ PCF8574 เพียงตัวเดียว — ควรพบ 0x20</li>
+    <li>เพิ่ม LCD — ควรพบ 0x20 และ 0x27</li>
+    <li>เพิ่ม VL53L1X — ควรพบ 0x20, 0x27 และ 0x29</li>
+    <li>กดปุ่มครบ 16 ปุ่มและตรวจข้อความ Serial</li>
+  </ol>
+
+  <div class="page-break"></div>
+  <h2>6. ข้อควรระวังด้านไฟเลี้ยง</h2>
+  <ul>
+    <li>ESP32-S3 ใช้ลอจิก 3.3V</li>
+    <li>Pull-up ของ SDA/SCL ต้องไม่ดึงขึ้น 5V โดยตรง</li>
+    <li>ทุกอุปกรณ์ต้องใช้ GND ร่วมกัน</li>
+    <li>ปิดไฟทุกครั้งก่อนถอดหรือสลับสาย</li>
+    <li>ตรวจแรงดันที่ขาโมดูลจริง ไม่ตรวจเฉพาะด้านแหล่งจ่าย</li>
+  </ul>
+  <table>
+    <thead><tr><th>จุดตรวจ</th><th>ค่าปกติขณะบัสว่าง</th></tr></thead>
+    <tbody>
+      <tr><td>VCC–GND</td><td>ประมาณ 3.3V</td></tr>
+      <tr><td>SDA–GND</td><td>ประมาณ 3.3V / HIGH</td></tr>
+      <tr><td>SCL–GND</td><td>ประมาณ 3.3V / HIGH</td></tr>
+    </tbody>
+  </table>
+
+  <h2>7. ปัญหาระหว่างทดสอบ: COM19 ถูกใช้งาน</h2>
+  <h3>อาการ</h3>
+  <pre>Could not open COM19: Access is denied
+The port is busy or doesn't exist</pre>
+  <p>สาเหตุคือมี PlatformIO Serial Monitor มากกว่าหนึ่งชุดจับ COM19 อยู่พร้อมกัน ไม่ใช่ความเสียหายของ ESP32</p>
+  <h3>วิธีแก้</h3>
+  <ol>
+    <li>ปิด Serial Monitor ทุกหน้าต่างก่อน Upload</li>
+    <li>ใช้ Monitor เพียงหนึ่งชุดต่อหนึ่ง COM port</li>
+    <li>ถ้ายังค้าง ให้หยุดเฉพาะ process ของ PlatformIO Monitor แล้ว Upload ใหม่</li>
+    <li>หลัง Upload สำเร็จจึงเปิด Monitor ที่ 115200 baud</li>
+  </ol>
+
+  <h2>8. เครื่องมือ I²C Scanner ที่เพิ่มในโครงการ</h2>
+  <table>
+    <tbody>
+      <tr><th>Environment</th><td>esp32-s3-i2c-scanner</td></tr>
+      <tr><th>SDA / SCL</th><td>GPIO8 / GPIO9</td></tr>
+      <tr><th>Baud rate</th><td>115200</td></tr>
+      <tr><th>ช่วงสแกน</th><td>0x01–0x7E</td></tr>
+      <tr><th>รอบการสแกน</th><td>ทุก 3 วินาที</td></tr>
+      <tr><th>ความสามารถเพิ่มเติม</th><td>ตรวจ SDA/SCL LOW ก่อนเริ่ม transaction</td></tr>
+    </tbody>
+  </table>
+  <pre>pio run -e esp32-s3-i2c-scanner -t upload --upload-port COM19
+pio device monitor -e esp32-s3-i2c-scanner --port COM19</pre>
+
+  <h2>9. เช็กลิสต์ตรวจรับฮาร์ดแวร์</h2>
+  <table>
+    <thead><tr><th>รายการ</th><th>เกณฑ์ผ่าน</th><th>สถานะล่าสุด</th></tr></thead>
+    <tbody>
+      <tr><td>ESP32 Upload</td><td>Upload COM19 สำเร็จและ Serial อ่านได้</td><td class="pass">ผ่าน</td></tr>
+      <tr><td>HX711 Communication</td><td>แสดง RAW ต่อเนื่อง ไม่เป็นค่ารางสุดค้าง</td><td class="pass">ผ่าน</td></tr>
+      <tr><td>Load Cell Response</td><td>RAW เปลี่ยนตามแรงและกลับใกล้ศูนย์เดิม</td><td class="pass">ผ่าน</td></tr>
+      <tr><td>Load Cell Calibration</td><td>อ่านตุ้มน้ำหนักมาตรฐานได้ตามค่าคลาดเคลื่อนที่กำหนด</td><td class="pending">รอดำเนินการ</td></tr>
+      <tr><td>I²C Idle Level</td><td>SDA=HIGH และ SCL=HIGH</td><td class="fail">ไม่ผ่าน: SCL LOW</td></tr>
+      <tr><td>PCF8574 Address</td><td>Scanner พบ 0x20 และไม่ชน LCD</td><td class="pending">ยังระบุไม่ได้</td></tr>
+      <tr><td>Keypad 16 Keys</td><td>ทุกปุ่มแสดงตัวอักษรถูกต้องหนึ่งครั้งต่อการกด</td><td class="pending">รอแก้ I²C</td></tr>
+      <tr><td>LCD</td><td>พบ 0x27 และแสดงผลได้</td><td class="pending">รอตรวจ</td></tr>
+      <tr><td>VL53L1X</td><td>พบ 0x29 และอ่านระยะได้</td><td class="pending">รอตรวจ</td></tr>
+      <tr><td>USB Printer</td><td>พิมพ์จริงและตอบ ACK printed/failed ถูกต้อง</td><td class="pending">รออุปกรณ์จริง</td></tr>
+    </tbody>
+  </table>
+
+  <h2>10. บทสรุป</h2>
+  <p>ปัญหา Load Cell ได้รับการแก้ไขแล้วด้วยการวัดแรงดันและความต้านทานเพื่อระบุคู่สาย Wheatstone Bridge ใหม่ ทำให้ HX711 อ่านค่า RAW และตอบสนองต่อแรงกดได้ตามปกติ ส่วนคีย์แพด PCF8574 ยังไม่สามารถตรวจ address ได้ เนื่องจากตรวจพบ SCL/GPIO9 อยู่ระดับ LOW ค้าง จึงต้องตรวจลำดับขั้ว สายไฟ จุดลัดวงจร และแยกอุปกรณ์บน I²C Bus ทีละตัวก่อนทดสอบซอฟต์แวร์คีย์แพดต่อไป</p>
+  <div class="footer-note">เอกสารนี้บันทึกจากผลการทดสอบจริง ณ วันที่จัดทำ ค่าที่ยังไม่ผ่านต้องยืนยันซ้ำหลังแก้ไขวงจร</div>
+</body>
+</html>

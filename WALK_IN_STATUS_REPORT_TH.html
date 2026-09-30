@@ -1,0 +1,249 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <title>รายงานสถานะระบบคิว Walk-in</title>
+  <style>
+    @page {
+      size: A4;
+      margin: 15mm 14mm 16mm;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      color: #172033;
+      font-family: "Tahoma", "Leelawadee UI", sans-serif;
+      font-size: 10.5pt;
+      line-height: 1.55;
+      background: #ffffff;
+    }
+
+    h1, h2, h3, p { margin-top: 0; }
+    h1 { margin-bottom: 5px; font-size: 24pt; line-height: 1.2; color: #123a89; }
+    h2 {
+      margin: 20px 0 9px;
+      padding-bottom: 5px;
+      border-bottom: 2px solid #2b66e8;
+      font-size: 15pt;
+      color: #123a89;
+      break-after: avoid;
+    }
+    h3 { margin: 13px 0 5px; font-size: 11.5pt; color: #1e4ea8; break-after: avoid; }
+    p { margin-bottom: 7px; }
+
+    .cover {
+      padding: 22px 24px;
+      border: 1px solid #cfe0ff;
+      border-radius: 16px;
+      background: linear-gradient(135deg, #edf4ff 0%, #ffffff 70%);
+    }
+    .subtitle { margin: 0; color: #52627a; font-size: 12pt; }
+    .meta { margin-top: 15px; color: #52627a; }
+    .status {
+      display: inline-block;
+      margin-top: 13px;
+      padding: 7px 12px;
+      border-radius: 999px;
+      color: #08763d;
+      background: #dff8e9;
+      border: 1px solid #a8e5c1;
+      font-weight: 700;
+    }
+
+    .summary {
+      margin-top: 15px;
+      padding: 12px 14px;
+      border-left: 5px solid #2b66e8;
+      background: #f3f7ff;
+      border-radius: 7px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 8px 0 12px;
+      font-size: 9.5pt;
+    }
+    th, td { padding: 6px 8px; border: 1px solid #d8e0ed; vertical-align: top; }
+    th { color: #ffffff; background: #275fd7; text-align: left; }
+    tr:nth-child(even) td { background: #f7f9fc; }
+    .pass { color: #08763d; font-weight: 700; white-space: nowrap; }
+    .pending { color: #a55a00; font-weight: 700; white-space: nowrap; }
+
+    code {
+      padding: 1px 4px;
+      border-radius: 4px;
+      color: #153b83;
+      background: #edf3ff;
+      font-family: Consolas, monospace;
+      font-size: 9pt;
+    }
+    pre {
+      margin: 6px 0 12px;
+      padding: 10px 12px;
+      overflow-wrap: anywhere;
+      white-space: pre-wrap;
+      border: 1px solid #d7e0ef;
+      border-radius: 8px;
+      background: #f7f9fc;
+      font: 8.6pt/1.45 Consolas, monospace;
+      break-inside: avoid;
+    }
+
+    ul, ol { margin-top: 5px; padding-left: 23px; }
+    li { margin-bottom: 3px; }
+    .note {
+      padding: 10px 12px;
+      border: 1px solid #ffd28d;
+      border-radius: 8px;
+      background: #fff8e9;
+    }
+    .handoff {
+      padding: 13px 15px;
+      border: 1px solid #b9d2ff;
+      border-radius: 9px;
+      background: #f2f7ff;
+    }
+    .small { color: #637086; font-size: 9pt; }
+    .avoid-break { break-inside: avoid; }
+  </style>
+</head>
+<body>
+  <section class="cover">
+    <h1>รายงานสถานะระบบคิว Walk-in</h1>
+    <p class="subtitle">ClinicCare Scale — Firmware / MQTT / Backend Integration</p>
+    <div class="status">Walk-in Core Software: ผ่านการทดสอบแล้ว</div>
+    <p class="meta">
+      วันที่จัดทำ: 16 กันยายน 2569<br>
+      อุปกรณ์ทดสอบ: ESP32-S3 / Device ID <code>SCALE-001</code><br>
+      ขอบเขต: ทดสอบระบบโดยยังไม่ต่อเซนเซอร์และเครื่องพิมพ์จริง
+    </p>
+  </section>
+
+  <div class="summary">
+    <strong>สรุปผู้บริหาร:</strong> Firmware สามารถสร้างข้อมูล Walk-in ส่งผ่าน MQTT/TLS ให้ Backend
+    สร้างคิว B รับ ACK เก็บงานค้างใน NVS ส่งซ้ำหลังการเชื่อมต่อหรือรีสตาร์ต และป้องกันการสร้างคิวซ้ำด้วย
+    <code>message_id</code> เดิมได้แล้ว ส่วนที่ยังต้องทำคือทดสอบอุปกรณ์จริงและปรับพฤติกรรม Print Outbox ของ Backend
+  </div>
+
+  <h2>1. ความสามารถที่พร้อมใช้งาน</h2>
+  <table>
+    <thead>
+      <tr><th style="width:31%">รายการ</th><th style="width:15%">สถานะ</th><th>รายละเอียด</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>รับค่าวัดจำลอง</td><td class="pass">ผ่าน</td><td>ป้อนผ่าน Serial เช่น <code>W 60 170</code></td></tr>
+      <tr><td>สร้างข้อมูล Walk-in</td><td class="pass">ผ่าน</td><td>สร้าง JSON โดยกำหนด <code>mode: "walk_in"</code></td></tr>
+      <tr><td>เชื่อมต่อ MQTT/TLS</td><td class="pass">ผ่าน</td><td>พอร์ต 8883, MQTT 3.1.1, QoS 1 และ Retain false</td></tr>
+      <tr><td>ส่ง Measurement</td><td class="pass">ผ่าน</td><td>ส่งไปยัง <code>clinic/v1/devices/SCALE-001/measurements</code></td></tr>
+      <tr><td>Backend สร้างคิว B</td><td class="pass">ผ่าน</td><td>ได้รับคิว Walk-in เช่น B005, B007 และ B008</td></tr>
+      <tr><td>รับและตรวจสอบ ACK</td><td class="pass">ผ่าน</td><td>รองรับ accepted, duplicate และ rejected พร้อมตรวจ message_id</td></tr>
+      <tr><td>ตรวจประเภทหมายเลขคิว</td><td class="pass">ผ่าน</td><td>Walk-in ต้องได้รับ <code>queue_number</code> ที่ขึ้นต้นด้วย B</td></tr>
+      <tr><td>ป้องกันการวัดซ้อน</td><td class="pass">ผ่าน</td><td>ไม่สร้างรายการใหม่ระหว่างที่ Measurement เดิมยังรอ ACK</td></tr>
+      <tr><td>บันทึก Pending ลง NVS</td><td class="pass">ผ่าน</td><td>ข้อมูลค้างไม่หายเมื่อ Wi-Fi หลุดหรือบอร์ดรีสตาร์ต</td></tr>
+      <tr><td>Retry ด้วยข้อมูลเดิม</td><td class="pass">ผ่าน</td><td>ส่ง payload และ message_id เดิมหลัง reconnect หรือ ACK สูญหาย</td></tr>
+      <tr><td>Backend Deduplication</td><td class="pass">ผ่าน</td><td>Backend ตอบ duplicate และคืน measurement/queue เดิม ไม่สร้างคิวซ้ำ</td></tr>
+      <tr><td>รับงานพิมพ์</td><td class="pass">ผ่าน*</td><td>รับ Topic /print และป้องกันงานซ้ำด้วย print_job_id</td></tr>
+      <tr><td>ส่งผลการพิมพ์</td><td class="pass">ผ่าน*</td><td>ส่ง /print-ack ได้; เมื่อไม่มี Printer จะตอบ failed/PRINTER_NOT_CONNECTED</td></tr>
+    </tbody>
+  </table>
+  <p class="small">* ผ่านในระดับโปรโตคอล ยังไม่ได้ทดสอบการพิมพ์กระดาษจริง</p>
+
+  <h2>2. MQTT Contract สำหรับ Walk-in</h2>
+  <h3>Firmware → Backend</h3>
+  <p>Topic: <code>clinic/v1/devices/SCALE-001/measurements</code></p>
+  <pre>{
+  "schema_version": "1.0",
+  "message_id": "MSG-B-SCALE-001-xxxxxxxxxx-xxxxxxxx",
+  "device_id": "SCALE-001",
+  "mode": "walk_in",
+  "measured_at": "2026-09-15T18:28:31.000Z",
+  "weight": 60,
+  "height": 170
+}</pre>
+  <p>Firmware ไม่คำนวณ BMI เอง โดย Backend เป็นผู้คำนวณและส่ง BMI กลับมากับ Print Job</p>
+
+  <h3>Backend → Firmware: สร้างคิวสำเร็จ</h3>
+  <p>Topic: <code>clinic/v1/devices/SCALE-001/measurement-ack</code></p>
+  <pre>{
+  "message_id": "MSG-B-SCALE-001-xxxxxxxxxx-xxxxxxxx",
+  "status": "accepted",
+  "measurement_id": 66,
+  "queue_number": "B008",
+  "print_pending": true
+}</pre>
+
+  <h3>Backend → Firmware: รับข้อมูลเดิมซ้ำ</h3>
+  <pre>{
+  "message_id": "MSG-B-SCALE-001-xxxxxxxxxx-xxxxxxxx",
+  "status": "duplicate",
+  "measurement_id": 66,
+  "queue_number": "B008",
+  "print_pending": true
+}</pre>
+  <p>ACK แบบ duplicate ต้องคืน <code>measurement_id</code> และ <code>queue_number</code> เดิม โดยไม่สร้างคิวใหม่</p>
+
+  <h2>3. หลักฐานการทดสอบ Reliability</h2>
+  <ol>
+    <li>Firmware ส่ง Measurement และ Backend สร้างคิว B008 ด้วยสถานะ accepted</li>
+    <li>Firmware จำลองว่า ACK ครั้งแรกสูญหาย และยังเก็บ Pending ไว้</li>
+    <li>ครบเวลาจึงส่ง payload และ message_id เดิมอีกครั้ง</li>
+    <li>Backend ตอบ duplicate พร้อม measurement_id 66 และคิว B008 เดิม</li>
+    <li>ไม่เกิดคิวเพิ่ม และ Firmware ล้าง Pending กลับสู่สถานะพร้อมใช้งาน</li>
+    <li>ทดสอบเพิ่มเติมโดยตัด Wi-Fi แล้วรีเซ็ตบอร์ด พบว่า NVS โหลด Measurement เดิมและส่งต่ออัตโนมัติหลังเชื่อมต่อสำเร็จ</li>
+  </ol>
+
+  <h2>4. สิ่งที่ยังต้องดำเนินการ</h2>
+  <table>
+    <thead>
+      <tr><th style="width:25%">ผู้รับผิดชอบ</th><th>รายการ</th><th style="width:17%">สถานะ</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Backend</td>
+        <td>ตรวจ Print Outbox: บางครั้งส่ง print_job_id เดิมซ้ำหลังได้รับ failed ควรกำหนด terminal state หรือ retry/backoff/จำนวนครั้งสูงสุด</td>
+        <td class="pending">ต้องตรวจ</td>
+      </tr>
+      <tr>
+        <td>Backend</td>
+        <td>เมื่อ ACK ระบุ print_pending=true ต้องรับประกันว่ามีการสร้างและส่ง /print; เคยพบหนึ่งกรณีที่งานพิมพ์มาไม่สม่ำเสมอ</td>
+        <td class="pending">ต้องตรวจ</td>
+      </tr>
+      <tr>
+        <td>Web</td>
+        <td>ยืนยันว่าคิวทดสอบล่าสุด เช่น B008 แสดงเพียงหนึ่งรายการและสถานะอัปเดตถูกต้อง</td>
+        <td class="pending">รอยืนยัน</td>
+      </tr>
+      <tr>
+        <td>Firmware/Hardware</td>
+        <td>ทดสอบและปรับเทียบ HX711/Load Cell, VL53L1X, Keypad, LCD และ USB Printer ของจริง</td>
+        <td class="pending">ยังไม่ทดสอบจริง</td>
+      </tr>
+      <tr>
+        <td>ทุกทีม</td>
+        <td>ทดสอบ End-to-End ด้วยคนวัดจริง ตั้งแต่ชั่งน้ำหนักจนได้รับบัตรคิวที่พิมพ์ออกมา</td>
+        <td class="pending">ขั้นถัดไป</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="note avoid-break">
+    <strong>หมายเหตุเกี่ยวกับ Printer:</strong> การได้รับ <code>PRINTER_NOT_CONNECTED</code> ขณะยังไม่ต่อเครื่องพิมพ์เป็นพฤติกรรมปกติ
+    และไม่ใช่ความผิดพลาดของขั้นตอนสร้างคิว Walk-in
+  </div>
+
+  <h2>5. ข้อความส่งมอบให้อีกทีม</h2>
+  <div class="handoff">
+    ระบบ Walk-in ส่วนหลักผ่านแล้ว Firmware สามารถส่งน้ำหนักและส่วนสูงผ่าน MQTT/TLS พอร์ต 8883 ด้วย QoS 1
+    และ Retain false จากนั้น Backend สร้างคิว B และตอบ Measurement ACK ได้ถูกต้อง ระบบรองรับการเก็บข้อมูลค้างใน NVS,
+    ส่งใหม่หลังหลุดหรือรีสตาร์ต, ใช้ message_id เดิม และป้องกันคิวซ้ำด้วยสถานะ duplicate ได้แล้ว เหลือการยืนยันหน้าเว็บ
+    สำหรับคิวล่าสุด การปรับ Backend Print Outbox และการทดสอบกับเซนเซอร์และเครื่องพิมพ์จริง
+  </div>
+
+  <p class="small" style="margin-top:18px; text-align:center;">
+    สถานะรวม: Walk-in Core Software ผ่านแล้ว — Physical Hardware End-to-End ยังไม่เสร็จ
+  </p>
+</body>
+</html>
