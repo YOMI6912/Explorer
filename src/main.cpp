@@ -6,6 +6,7 @@
 #include "devices/HX711Device.h"
 #include "devices/KeypadDevice.h"
 #include "devices/LcdDevice.h"
+#include "devices/RemoteHeightLink.h"
 #include "devices/UsbPrinter.h"
 #include "devices/VL53L1XDevice.h"
 #include "workflows/OnlineQueueWorkflow.h"
@@ -17,11 +18,44 @@ bool loadCellReady = false;
 bool heightSensorReady = false;
 bool printerHostReady = false;
 
+void runDistanceDiagnostic(const String &referenceText);
+
 uint32_t lastSensorPrintAt = 0;
 uint32_t lastHeightSensorRetryAt = 0;
 constexpr uint32_t HEIGHT_SENSOR_RETRY_MS = 5000;
 constexpr uint8_t MEASUREMENT_SENSOR_START_ATTEMPTS = 4;
 bool lastPrinterReady = false;
+uint32_t lastMeasurementFinishedAt = 0;
+bool linkScreenShown = false;
+bool lastApShown = false;
+bool lastTcpShown = false;
+bool lastC3WifiShown = false;
+uint32_t lastLinkDisplayAt = 0;
+constexpr uint32_t LINK_DISPLAY_REFRESH_MS = 2000;
+
+void updateLinkDisplay() {
+  if (!Config::Features::REMOTE_HEIGHT_ENABLED || !lcdReady ||
+      !Config::Features::OFFLINE_ONLY ||
+      millis() - lastMeasurementFinishedAt < 4000) return;
+  const bool apReady = RemoteHeightLink::isReady();
+  const bool c3WifiReady = RemoteHeightLink::stationCount() > 0;
+  const bool tcpReady = RemoteHeightLink::isConnected();
+  const uint32_t now = millis();
+  if (linkScreenShown && apReady == lastApShown &&
+      c3WifiReady == lastC3WifiShown && tcpReady == lastTcpShown &&
+      now - lastLinkDisplayAt < LINK_DISPLAY_REFRESH_MS) return;
+  lastApShown = apReady;
+  lastC3WifiShown = c3WifiReady;
+  lastTcpShown = tcpReady;
+  lastLinkDisplayAt = now;
+  linkScreenShown = true;
+  LcdDevice::showScreen("HEIGHT LINK STATUS",
+                        apReady ? "S3 AP: READY" : "S3 AP: RESTARTING",
+                        c3WifiReady ? "C3 WIFI: CONNECTED" : "C3 WIFI: WAITING",
+                        tcpReady ? "TCP: CONNECTED B=GO"
+                                 : (c3WifiReady ? "TCP: CONNECTING"
+                                                : "CHECK C3 POWER"));
+}
 
 void beginI2cBus() {
   Serial.printf("[I2C] VL53 Wire0 SDA=GPIO%u SCL=GPIO%u XSHUT=GPIO%u addr=0x29; LCD Wire1 SDA=GPIO%u SCL=GPIO%u addr=0x%02X\n",
@@ -43,7 +77,9 @@ void beginDevices() {
   // Start the height sensor first using the same order as the proven
   // standalone sketch. LCD is isolated on Wire1 and starts afterwards.
   if (Config::Features::ENABLE_HEIGHT_SENSOR) {
-    heightSensorReady = VL53L1XDevice::begin();
+    heightSensorReady = Config::Features::REMOTE_HEIGHT_ENABLED
+                            ? RemoteHeightLink::begin()
+                            : VL53L1XDevice::begin();
   }
 
   if (Config::Features::ENABLE_LCD) {
@@ -74,7 +110,8 @@ void beginDevices() {
 }
 
 void retryHeightSensorIfNeeded() {
-  if (!Config::Features::ENABLE_HEIGHT_SENSOR || heightSensorReady) {
+  if (!Config::Features::ENABLE_HEIGHT_SENSOR ||
+      Config::Features::REMOTE_HEIGHT_ENABLED || heightSensorReady) {
     return;
   }
 
@@ -87,8 +124,7 @@ void retryHeightSensorIfNeeded() {
   heightSensorReady = VL53L1XDevice::begin();
   if (heightSensorReady) {
     Serial.println("[VL53L1X] Recovery successful");
-    OnlineQueueWorkflow::setMeasurementHardwareReady(loadCellReady, true);
-    if (lcdReady) {
+    if (lcdReady && !Config::Features::OFFLINE_ONLY) {
       OnlineQueueWorkflow::refreshDisplay();
     }
   }
@@ -124,9 +160,49 @@ bool startHeightSensorForMeasurement() {
   return false;
 }
 
+void printOfflineMeasurement(float weightKg, float heightCm) {
+  const float heightM = heightCm / 100.0f;
+  const float bmi = heightM > 0.0f ? weightKg / (heightM * heightM) : 0.0f;
+  Serial.printf("[OFFLINE] น้ำหนัก %.1f kg, ส่วนสูง %.1f cm, BMI %.2f\n",
+                weightKg, heightCm, bmi);
+
+  if (!printerHostReady || !UsbPrinter::isReady()) {
+    Serial.println("[OFFLINE] Printer not ready; result kept in Serial only");
+    if (lcdReady) {
+      LcdDevice::showScreen("RESULT READY",
+                            "W: " + String(weightKg, 1) + " kg",
+                            "H: " + String(heightCm, 1) + " cm",
+                            "PRINTER NOT READY");
+    }
+    return;
+  }
+
+  // Reuse the existing ESC/POS ticket formatter, but use a local marker
+  // instead of a backend-issued queue number. No Wi-Fi/MQTT call is made.
+  if (UsbPrinter::printQueueTicket("OFFLINE", weightKg, heightCm, bmi,
+                                   "LOCAL")) {
+    Serial.println("[OFFLINE] Direct print submitted (queue/network disabled)");
+    if (lcdReady) {
+      LcdDevice::showScreen("PRINTING...",
+                            "W: " + String(weightKg, 1) + " kg",
+                            "H: " + String(heightCm, 1) + " cm",
+                            "PLEASE WAIT");
+    }
+  } else {
+    Serial.println("[OFFLINE] Printer busy or ticket submission failed");
+    if (lcdReady) {
+      LcdDevice::showScreen("PRINT FAILED", "PRINTER BUSY",
+                            "RESULT IN SERIAL", "TRY AGAIN");
+    }
+  }
+}
+
 void submitHardwareMeasurement(bool walkIn) {
+  (void)walkIn;
   if (Config::Features::ENABLE_HEIGHT_SENSOR) {
-    Serial.println("[VL53L1X] Preparing height sensor (reuse session; reset only if unhealthy)...");
+    Serial.println(Config::Features::REMOTE_HEIGHT_ENABLED
+                       ? "[REMOTE] Preparing calibrated C3 height request..."
+                       : "[VL53L1X] Preparing height sensor (reuse session; reset only if unhealthy)...");
     if (lcdReady) {
       LcdDevice::showScreen("PREPARING SENSOR", "PLEASE WAIT",
                             "DO NOT PRESS AGAIN");
@@ -144,29 +220,23 @@ void submitHardwareMeasurement(bool walkIn) {
     return;
   }
 
-  Serial.println("[วัดจริง] ปล่อยปุ่ม วางแขนข้างลำตัว และยืนนิ่ง");
-  for (int8_t seconds = Config::System::MEASUREMENT_COUNTDOWN_SECONDS;
-       seconds > 0;
-       --seconds) {
-    Serial.printf("[วัดจริง] เริ่มวัดใน %d...\n", seconds);
-    if (lcdReady) {
-      LcdDevice::showScreen(walkIn ? "WALK-IN QUEUE B" : "ONLINE QUEUE A",
-                            "HANDS DOWN - STILL",
-                            "MEASURE IN " + String(seconds),
-                            "PLEASE DO NOT MOVE");
-    }
-    delay(1000);
+  Serial.println("[วัดจริง] เริ่มวัดทันที: ปล่อยปุ่ม วางแขนข้างลำตัว และยืนนิ่ง");
+  if (lcdReady) {
+    LcdDevice::showScreen(Config::Features::OFFLINE_ONLY
+                              ? "OFFLINE MEASURE"
+                              : (walkIn ? "WALK-IN QUEUE B" : "ONLINE QUEUE A"),
+                          "HANDS DOWN - STILL", "MEASURING NOW",
+                          "PLEASE DO NOT MOVE");
   }
 
-  // Start the sensor only after the countdown. Leaving a continuous session
-  // running while the person gets ready was the main source of the
-  // first-frame-good-then-I2C-corrupt pattern in the logs.
-  if (Config::Features::ENABLE_HEIGHT_SENSOR) {
+  // Begin the sensor session immediately when the measurement is requested;
+  // there is no user-facing countdown before sampling.
+  if (Config::Features::ENABLE_HEIGHT_SENSOR &&
+      !Config::Features::REMOTE_HEIGHT_ENABLED) {
     heightSensorReady = startHeightSensorForMeasurement();
-    OnlineQueueWorkflow::setMeasurementHardwareReady(loadCellReady,
-                                                       heightSensorReady);
   }
-  if (Config::Features::ENABLE_HEIGHT_SENSOR && !heightSensorReady) {
+  if (Config::Features::ENABLE_HEIGHT_SENSOR && !heightSensorReady &&
+      !Config::Features::REMOTE_HEIGHT_ENABLED) {
     Serial.println("[วัดจริง] VL53L1X ยังไม่พร้อมหลังรีเซต XSHUT; ไม่ส่งคิว");
     if (lcdReady) {
       LcdDevice::showScreen("SENSOR NOT READY", "CHECK HEIGHT SENSOR",
@@ -194,6 +264,13 @@ void submitHardwareMeasurement(bool walkIn) {
   }
   Serial.printf("[HX711] Weight before height scan=%.1f kg\n", weightBeforeKg);
 
+  float heightCm = 0.0f;
+  bool heightReadOk = false;
+  if (Config::Features::REMOTE_HEIGHT_ENABLED) {
+    heightReadOk = RemoteHeightLink::requestHeightCm(heightCm);
+    heightSensorReady = RemoteHeightLink::isReady();
+  } else {
+
   if (lcdReady) {
     // Keep the display contents but turn off its high-current backlight
     // during the VL53 burst.  This helps when both modules share a small
@@ -202,25 +279,102 @@ void submitHardwareMeasurement(bool walkIn) {
     LcdDevice::suspendForSensor();
   }
 
-  // The session was checked/recovered after the countdown. Keep it running
-  // through the burst; a second reset here would reintroduce startup races.
+  // Keep the checked/recovered session running through the burst; a second
+  // reset here would reintroduce startup races.
   if (heightSensorReady) {
-    Serial.printf("[VL53L1X] Using continuous %ux%u ranging session...\n",
-                  Config::HeightSensor::ROI_WIDTH,
-                  Config::HeightSensor::ROI_HEIGHT);
+      Serial.printf("[VL53L1X] Using %s %ux%u ranging session...\n",
+                    Config::HeightSensor::USE_SINGLE_SHOT ? "single-shot" :
+                                                             "continuous",
+                    Config::HeightSensor::ROI_WIDTH,
+                    Config::HeightSensor::ROI_HEIGHT);
   }
-  float heightCm = 0.0f;
-  const bool heightReadOk =
-      heightSensorReady && VL53L1XDevice::readHeightCmFixedRoi(heightCm);
+  float heightScans[Config::HeightSensor::HEIGHT_CONSENSUS_MAX_ATTEMPTS] = {};
+  uint8_t validHeightScans = 0;
+  // A tight cluster within one burst can still be the wrong optical return.
+  // Require a second independent burst to agree before printing a height.
+  for (uint8_t scan = 0;
+       scan < Config::HeightSensor::HEIGHT_CONSENSUS_MAX_ATTEMPTS &&
+       !heightReadOk;
+       ++scan) {
+    if (!heightSensorReady) {
+      Serial.printf("[VL53L1X] Recovering before consensus scan %u...\n",
+                    static_cast<unsigned>(scan + 1));
+      heightSensorReady = VL53L1XDevice::begin();
+    }
+    bool scanOk = false;
+    for (uint8_t retry = 0; retry < 2 && !scanOk; ++retry) {
+      if (retry > 0) {
+        // A failed optical/target scan on this module often leaves the
+        // continuous session returning stale 0/64351/2 m values even though
+        // the I2C device still ACKs. Start a fresh XSHUT session for every
+        // retry, regardless of the reported failure category.
+        const bool resetNeeded = true;
+        Serial.printf("[VL53L1X] Height scan %u retry 2/2 (%s)\n",
+                      static_cast<unsigned>(scan + 1),
+                      resetNeeded ? "XSHUT reset" : "same ranging session");
+        if (resetNeeded) {
+          heightSensorReady = VL53L1XDevice::begin();
+        }
+      }
+      if (heightSensorReady) {
+        float candidateHeight = 0.0f;
+        scanOk = VL53L1XDevice::readHeightCmFixedRoi(candidateHeight);
+        if (scanOk) {
+          heightScans[validHeightScans++] = candidateHeight;
+          Serial.printf("[VL53L1X] Height consensus scan %u/%u = %.1f cm\n",
+                        static_cast<unsigned>(validHeightScans),
+                        static_cast<unsigned>(Config::HeightSensor::HEIGHT_CONSENSUS_MAX_ATTEMPTS),
+                        candidateHeight);
+          // Accept the first pair of independent scans that agrees. A third
+          // scan can rescue one outlier or one failed sensor read.
+          for (uint8_t previous = 0;
+               !heightReadOk && previous + 1 < validHeightScans;
+               ++previous) {
+            const float pairDiff =
+                fabsf(heightScans[previous] - heightScans[validHeightScans - 1]);
+            if (pairDiff <= Config::HeightSensor::HEIGHT_CONSENSUS_MAX_DIFF_CM) {
+              heightCm =
+                  (heightScans[previous] + heightScans[validHeightScans - 1]) /
+                  2.0f;
+              Serial.printf("[VL53L1X] Height consensus PASS: %.1f cm (pair %.1f/%.1f, diff %.1f cm)\n",
+                            heightCm, heightScans[previous],
+                            heightScans[validHeightScans - 1], pairDiff);
+              heightReadOk = true;
+              break;
+            }
+          }
+        }
+      }
+    }
+    if (!scanOk) {
+      Serial.printf("[VL53L1X] Height consensus scan %u failed\n",
+                    static_cast<unsigned>(scan + 1));
+      // A failed scan can poison the continuous session without making the
+      // sensor look offline. Force the next consensus scan through XSHUT.
+      heightSensorReady = false;
+    }
+  }
+  if (!heightReadOk && validHeightScans >= Config::HeightSensor::HEIGHT_CONSENSUS_SCANS) {
+    Serial.printf("[VL53L1X] Height consensus reject after %u valid scans; no pair within %.1f cm\n",
+                  static_cast<unsigned>(validHeightScans),
+                  Config::HeightSensor::HEIGHT_CONSENSUS_MAX_DIFF_CM);
+  }
   if (lcdReady) {
     LcdDevice::resumeAfterSensor();
     LcdDevice::setBacklight(true);
   }
   heightSensorReady = VL53L1XDevice::isReady();
-  OnlineQueueWorkflow::setMeasurementHardwareReady(loadCellReady,
-                                                     heightSensorReady);
+  }
 
   if (!heightReadOk) {
+    if (Config::Features::REMOTE_HEIGHT_ENABLED) {
+      Serial.println("[REMOTE] Height unavailable or quality rejected; no ticket");
+      if (lcdReady) {
+        LcdDevice::showScreen("MEASURE FAILED", "HEIGHT LINK FAILED",
+                              "NO RECEIPT PRINTED", "PLEASE TRY AGAIN");
+      }
+      return;
+    }
     Serial.printf("[วัดจริง] คำนวณส่วนสูงไม่สำเร็จ ตรวจ VL53L1X และ SENSOR_MOUNT_HEIGHT_CM=%.1f\n",
                   Config::HeightSensor::SENSOR_MOUNT_HEIGHT_CM);
     Serial.println("[ทดสอบระบบชั่วคราว] ใช้คำสั่ง Serial: วัด 60 170");
@@ -271,9 +425,12 @@ void submitHardwareMeasurement(bool walkIn) {
     LcdDevice::showScreen("MEASUREMENT READY",
                           "WEIGHT: " + String(weightKg, 1) + " kg",
                           "HEIGHT: " + String(heightCm, 1) + " cm",
-                          "SENDING...");
+                          Config::Features::OFFLINE_ONLY ? "PRINTING..."
+                                                         : "SENDING...");
   }
-  if (walkIn) {
+  if (Config::Features::OFFLINE_ONLY) {
+    printOfflineMeasurement(weightKg, heightCm);
+  } else if (walkIn) {
     OnlineQueueWorkflow::submitWalkInMeasurement(weightKg, heightCm);
   } else {
     OnlineQueueWorkflow::submitMeasurement(weightKg, heightCm);
@@ -290,7 +447,21 @@ void updateKeypad() {
   char key = 0;
   if (KeypadDevice::getKey(key)) {
     Serial.printf("[Keypad] กดปุ่ม: %c\n", key);
-    if (Config::Features::ENABLE_QUEUE_A_SERIAL_TEST) {
+    if (Config::Features::B_DISTANCE_TEST_MODE &&
+        (key == 'B' || key == 'b')) {
+      Serial.println("[TEMP TEST] B -> DISTTEST 50; no weight, queue, or print");
+      runDistanceDiagnostic("50");
+      return;
+    }
+    if (Config::Features::OFFLINE_ONLY) {
+      if (key == 'B' || key == 'b') {
+        submitHardwareMeasurement(true);
+        lastMeasurementFinishedAt = millis();
+        linkScreenShown = false;
+      } else {
+        Serial.println("[OFFLINE] กด B เพื่อวัดและพิมพ์ผลโดยตรง");
+      }
+    } else if (Config::Features::ENABLE_QUEUE_A_SERIAL_TEST) {
       if (key == 'B' || key == 'b') {
         if (OnlineQueueWorkflow::isReadyForMeasurement()) {
           submitHardwareMeasurement(false);
@@ -452,6 +623,108 @@ void runHeightCalibrationDiagnostic(float referenceCm) {
   Serial.println("[HEIGHTTESTCAL] Diagnostic only; queue measurements still use the original formula");
 }
 
+// Read a fixed target without using the keypad, load cell, queue, or printer.
+// This is intended for mounting/optical checks such as a target at 26.3 cm or
+// 39.3 cm, so the raw range can be compared with a ruler independently of a
+// person's head position.
+void runDistanceDiagnostic(const String &referenceText) {
+  const float referenceCm = referenceText.length() > 0
+                                ? referenceText.toFloat()
+                                : NAN;
+  Serial.println("[DISTTEST] Fixed-target VL53 read; no weight, queue, or print");
+  if (isfinite(referenceCm)) {
+    Serial.printf("[DISTTEST] Reference target=%.1f cm; keep it fixed and centered\n",
+                  referenceCm);
+  } else {
+    Serial.println("[DISTTEST] Reference target not supplied; send DISTTEST 26.3 or DISTTEST 39.3");
+  }
+
+  if (!Config::Features::ENABLE_HEIGHT_SENSOR) {
+    Serial.println("[DISTTEST] Height sensor is disabled in this build");
+    return;
+  }
+  if (!heightSensorReady || !VL53L1XDevice::activeSessionHealthy()) {
+    heightSensorReady = startHeightSensorForMeasurement();
+  }
+  if (!heightSensorReady) {
+    Serial.println("[DISTTEST] Sensor offline; no result");
+    return;
+  }
+
+  if (lcdReady) {
+    LcdDevice::setBacklight(false);
+    LcdDevice::suspendForSensor();
+  }
+  // A fixed target can produce two tight but different optical clusters.
+  // Require three independent scans to agree before reporting one distance.
+  constexpr uint8_t requiredScans = 3;
+  constexpr uint8_t maxAttempts = 4;
+  constexpr float maxDistanceSpanCm = 0.8f;
+  float scanHeights[requiredScans] = {};
+  uint8_t validScans = 0;
+  for (uint8_t attempt = 0;
+       attempt < maxAttempts && validScans < requiredScans;
+       ++attempt) {
+    float scanHeightCm = 0.0f;
+    // Only DISTTEST may inspect a fixed target out to 70 cm.
+    if (VL53L1XDevice::readHeightCmFixedRoi(scanHeightCm, true)) {
+      scanHeights[validScans++] = scanHeightCm;
+      Serial.printf("[DISTTEST] Scan %u/%u: distance=%.1f cm\n",
+                    static_cast<unsigned>(validScans),
+                    static_cast<unsigned>(requiredScans),
+                    Config::HeightSensor::SENSOR_MOUNT_HEIGHT_CM - scanHeightCm);
+    } else {
+      Serial.printf("[DISTTEST] Scan attempt %u/%u failed\n",
+                    static_cast<unsigned>(attempt + 1),
+                    static_cast<unsigned>(maxAttempts));
+      // Reinitialize even when the bus still ACKs. The installed module can
+      // keep returning a corrupt continuous stream after an optical failure.
+      heightSensorReady = false;
+      if (attempt + 1 < maxAttempts) {
+        heightSensorReady = VL53L1XDevice::begin();
+      }
+    }
+  }
+  if (lcdReady) {
+    LcdDevice::resumeAfterSensor();
+    LcdDevice::setBacklight(true);
+  }
+  heightSensorReady = VL53L1XDevice::isReady();
+
+  if (validScans < requiredScans) {
+    Serial.printf("[DISTTEST] Rejected: only %u/%u complete scans; no result\n",
+                  static_cast<unsigned>(validScans),
+                  static_cast<unsigned>(requiredScans));
+    return;
+  }
+
+  float minHeightCm = scanHeights[0];
+  float maxHeightCm = scanHeights[0];
+  float heightSumCm = 0.0f;
+  for (float scanHeightCm : scanHeights) {
+    minHeightCm = fminf(minHeightCm, scanHeightCm);
+    maxHeightCm = fmaxf(maxHeightCm, scanHeightCm);
+    heightSumCm += scanHeightCm;
+  }
+  if (maxHeightCm - minHeightCm > maxDistanceSpanCm) {
+    Serial.printf("[DISTTEST] Rejected: scans disagree by %.1f cm (max %.1f cm); no result\n",
+                  maxHeightCm - minHeightCm, maxDistanceSpanCm);
+    return;
+  }
+  const float heightCm = heightSumCm / requiredScans;
+
+  const float equivalentDistanceCm =
+      Config::HeightSensor::SENSOR_MOUNT_HEIGHT_CM - heightCm;
+  Serial.printf("[DISTTEST] Result: distance=%.1f cm (%0.0f mm), calculated_height=%.1f cm\n",
+                equivalentDistanceCm,
+                equivalentDistanceCm * 10.0f,
+                heightCm);
+  if (isfinite(referenceCm)) {
+    Serial.printf("[DISTTEST] Error_vs_reference=%+.1f cm\n",
+                  equivalentDistanceCm - referenceCm);
+  }
+}
+
 void updateQueueASerialInput() {
   if (!Config::Features::ENABLE_QUEUE_A_SERIAL_TEST || Serial.available() <= 0) {
     return;
@@ -467,6 +740,21 @@ void updateQueueASerialInput() {
     }
     return;
   }
+  if (line.equalsIgnoreCase("REMOTEHEIGHT")) {
+    if (!Config::Features::REMOTE_HEIGHT_ENABLED) {
+      Serial.println("[REMOTEHEIGHT] Wireless height is disabled in this build");
+      return;
+    }
+    float heightCm = 0.0f;
+    const bool ok = RemoteHeightLink::requestHeightCm(heightCm);
+    if (ok) {
+      Serial.printf("[REMOTEHEIGHT] PASS height=%.1f cm; test only, no weight or print\n",
+                    heightCm);
+    } else {
+      Serial.println("[REMOTEHEIGHT] FAILED; test only, no weight or print");
+    }
+    return;
+  }
   if (line.equalsIgnoreCase("HEIGHTTEST")) {
     runHeightDiagnostic(0);
     return;
@@ -477,6 +765,13 @@ void updateQueueASerialInput() {
   }
   if (line.equalsIgnoreCase("HEIGHTTESTFIXED")) {
     runHeightDiagnostic(2);
+    return;
+  }
+  if (line.length() >= 8 &&
+      line.substring(0, 8).equalsIgnoreCase("DISTTEST")) {
+    String referenceText = line.substring(8);
+    referenceText.trim();
+    runDistanceDiagnostic(referenceText);
     return;
   }
   if (line.substring(0, 13).equalsIgnoreCase("HEIGHTTESTCAL")) {
@@ -525,7 +820,7 @@ void updatePrinter() {
   lastPrinterReady = readyNow;
   Serial.println(readyNow ? "[เครื่องพิมพ์] พร้อมใช้งาน"
                           : "[เครื่องพิมพ์] ยังไม่พร้อมใช้งาน");
-  if (lcdReady) {
+  if (lcdReady && !Config::Features::OFFLINE_ONLY) {
     OnlineQueueWorkflow::refreshDisplay();
   }
 }
@@ -548,22 +843,33 @@ void setup() {
   }
   beginDevices();
 
-  if (Config::Features::ENABLE_QUEUE_A_SERIAL_TEST) {
+  if (Config::Features::ENABLE_QUEUE_A_SERIAL_TEST &&
+      !Config::Features::OFFLINE_ONLY) {
+    // Start the private height AP before the clinic STA. This is the proven
+    // boot order for the installed S3/C3 pair; C3 can associate immediately.
     OnlineQueueWorkflow::begin();
     OnlineQueueWorkflow::setMeasurementHardwareReady(loadCellReady,
                                                        heightSensorReady);
+  } else if (Config::Features::OFFLINE_ONLY) {
+    Serial.println("[OFFLINE] Wi-Fi/MQTT/queue disabled; press keypad B to measure and print");
   }
   Serial.println("[ระบบ] เริ่มต้นระบบเรียบร้อย");
+  lastMeasurementFinishedAt = millis();
 }
 
 void loop() {
+  if (Config::Features::REMOTE_HEIGHT_ENABLED) {
+    RemoteHeightLink::update();
+  }
   updateQueueASerialInput();
   updateKeypad();
   retryHeightSensorIfNeeded();
   updateSensorDiagnostics();
   updatePrinter();
+  updateLinkDisplay();
 
-  if (Config::Features::ENABLE_QUEUE_A_SERIAL_TEST) {
+  if (Config::Features::ENABLE_QUEUE_A_SERIAL_TEST &&
+      !Config::Features::OFFLINE_ONLY) {
     OnlineQueueWorkflow::update();
   }
   delay(Config::System::LOOP_DELAY_MS);

@@ -16,7 +16,6 @@ constexpr uint32_t SERIAL_BAUD = 115200;
 constexpr uint32_t SERIAL_START_DELAY_MS = 1200;
 constexpr uint32_t SERIAL_READ_TIMEOUT_MS = 200;
 constexpr uint32_t LOOP_DELAY_MS = 5;
-constexpr uint8_t MEASUREMENT_COUNTDOWN_SECONDS = 3;
 }  // namespace System
 
 namespace Features {
@@ -46,6 +45,17 @@ namespace Features {
 #ifndef CLINIC_KEYPAD_DIRECT_GPIO
 #define CLINIC_KEYPAD_DIRECT_GPIO 0
 #endif
+#ifndef CLINIC_OFFLINE_ONLY
+#define CLINIC_OFFLINE_ONLY 1
+#endif
+// Temporary diagnostic mode: physical B runs DISTTEST 50 instead of the
+// normal weight/height/print workflow. Set to 0 before restoring clinic use.
+#ifndef CLINIC_B_DISTANCE_TEST
+#define CLINIC_B_DISTANCE_TEST 0
+#endif
+#ifndef CLINIC_REMOTE_HEIGHT
+#define CLINIC_REMOTE_HEIGHT 0
+#endif
 
 constexpr bool ENABLE_LCD = CLINIC_ENABLE_LCD != 0;
 constexpr bool ENABLE_KEYPAD = CLINIC_ENABLE_KEYPAD != 0;
@@ -53,11 +63,41 @@ constexpr bool ENABLE_LOAD_CELL = CLINIC_ENABLE_LOAD_CELL != 0;
 constexpr bool ENABLE_HEIGHT_SENSOR = CLINIC_ENABLE_HEIGHT_SENSOR != 0;
 constexpr bool ENABLE_USB_PRINTER = CLINIC_ENABLE_USB_PRINTER != 0;
 constexpr bool ENABLE_QUEUE_A_SERIAL_TEST = true;
+// When enabled, keypad B performs a local measurement and sends the ticket
+// directly to the USB printer. Wi-Fi/MQTT and the queue workflow are idle.
+// Set CLINIC_OFFLINE_ONLY=0 in a PlatformIO build flag to restore online mode.
+constexpr bool OFFLINE_ONLY = CLINIC_OFFLINE_ONLY != 0;
+constexpr bool B_DISTANCE_TEST_MODE = CLINIC_B_DISTANCE_TEST != 0;
+constexpr bool REMOTE_HEIGHT_ENABLED = CLINIC_REMOTE_HEIGHT != 0;
 constexpr bool ENABLE_WALKIN_RETRY_TEST =
     CLINIC_ENABLE_WALKIN_RETRY_TEST != 0;
 constexpr bool ENABLE_ONLINE_RETRY_TEST =
     CLINIC_ENABLE_ONLINE_RETRY_TEST != 0;
 }  // namespace Features
+
+namespace RemoteHeight {
+// Unique credentials for this installed S3/C3 pair. Changing both values
+// avoids stale profiles and same-SSID candidates from earlier firmware.
+constexpr char AP_SSID[] = "Clinic-Height-Link-90";
+constexpr char AP_PASSWORD[] = "ClinicHeight90!";
+// The clinic access point is on channel 6. ESP32 AP+STA must use the same
+// channel on both interfaces or the private C3 link will be dropped whenever
+// the clinic STA associates.
+constexpr uint8_t AP_CHANNEL = 1;
+constexpr uint16_t TCP_PORT = 45831;
+constexpr uint32_t CLIENT_WAIT_MS = 5000;
+constexpr float MOUNT_HEIGHT_CM = 197.0f;
+// The head profile is used from approximately 146 to 190 cm.  Keep margin
+// at both ends for head position and ambient-light variation; the
+// frame/span/retry quality gates still reject unstable returns.
+constexpr uint16_t MIN_RAW_MM = 100;
+constexpr uint16_t MAX_RAW_MM = 430;
+constexpr uint8_t MIN_VALID_FRAMES = 42;
+constexpr uint8_t MAX_SPAN_MM = 8;
+// C3 confirms the head target three times. Each confirmation can spend up to
+// MAX_MEASUREMENT_MS (4 seconds) collecting scans, plus ROI setup and delays.
+constexpr uint32_t RESPONSE_TIMEOUT_MS = 18000;
+}  // namespace RemoteHeight
 
 namespace Pins {
 constexpr uint8_t I2C_SDA = 8;
@@ -128,7 +168,8 @@ constexpr float MAX_SAMPLE_DEVIATION_KG = 1.5f;
 constexpr float MAX_WEIGHT_DRIFT_KG = 2.0f;
 
 // Calibrated from the stable raw span for a centered 63.0 kg reference load.
-constexpr float CALIBRATION_FACTOR = 10716.723f;
+// Recalibrated against the 61.95 kg reference reading (previously 63.8 kg).
+constexpr float CALIBRATION_FACTOR = 11036.75f;
 constexpr bool TARE_ON_START = true;
 
 constexpr float MIN_WEIGHT_KG = 1.0f;
@@ -136,13 +177,21 @@ constexpr float MAX_WEIGHT_KG = 300.0f;
 }  // namespace LoadCell
 
 namespace HeightSensor {
+// The installed module sometimes repeats a continuous-stream frame after an
+// I2C error. Single-shot mode starts one fresh ranging operation per sample,
+// waits for its data-ready interrupt, then clears that interrupt before the
+// next sample. This is slower than a stream but safer for clinical output.
+constexpr bool USE_SINGLE_SHOT = true;
 // Conservative timing for the installed clone: keep a 50 ms ranging budget
 // but leave 100 ms between results so the previous frame is fully latched.
-constexpr uint32_t TIMEOUT_MS = 500;
+// The configured ranging budget is 50 ms. A 300 ms driver timeout is enough
+// for a fresh frame but prevents a dead I2C transaction from stalling a whole
+// measurement for seconds.
+constexpr uint32_t TIMEOUT_MS = 300;
 constexpr uint32_t TIMING_BUDGET_US = 50000;
 // Leave a full margin after the 50 ms ranging budget before requesting the
 // next result.  This clone was returning 0/64351 mm when polled too closely.
-constexpr uint32_t CONTINUOUS_PERIOD_MS = 100;
+constexpr uint32_t CONTINUOUS_PERIOD_MS = 80;
 // Keep the measured 12x12 ROI running in production. On this installation,
 // repeated fixed-ROI scans succeeded while switching 12 -> 16 -> 12 caused
 // failed ranging and I2C recovery. The full ROI remains diagnostic only.
@@ -156,22 +205,37 @@ constexpr uint8_t FULL_ROI_HEIGHT = 16;
 // Use strict acceptance for clinic measurements. When quality is poor, fail
 // the height read instead of queueing a stable but potentially wrong target.
 constexpr uint8_t SAMPLE_COUNT = 7;
-// The sensor can lose the I2C bus after returning a short, stable burst. Keep
-// a three-frame cluster rather than discarding an otherwise usable target;
-// span/IQR checks below still reject scattered returns.
+// Require two independent height scans to agree before printing. This rejects
+// a single stable-but-wrong forehead/shoulder cluster.
+constexpr uint8_t HEIGHT_CONSENSUS_SCANS = 2;
+constexpr float HEIGHT_CONSENSUS_MAX_DIFF_CM = 0.8f;
+// A transient I2C drop or a different optical return can invalidate one scan.
+// Allow a third independent scan to find two agreeing results.
+constexpr uint8_t HEIGHT_CONSENSUS_MAX_ATTEMPTS = 3;
+// Require a real multi-frame head cluster before producing a clinical height.
+// Three frames were enough to accept occasional 179-181 cm false clusters
+// after the sensor returned background/shoulder samples.
 constexpr uint8_t MIN_VALID_SAMPLES = 3;
+constexpr uint8_t MIN_HEAD_CLUSTER_SAMPLES = 7;
 
-constexpr uint8_t MAX_SAMPLE_ATTEMPTS = 24;
+constexpr uint8_t MAX_SAMPLE_ATTEMPTS = 16;
 constexpr float MAX_IQR_CM = 2.0f;
-constexpr float MAX_SAMPLE_SPAN_CM = 4.0f;
+constexpr float MAX_SAMPLE_SPAN_CM = 0.8f;
 // The shorter 160 cm target is farther from the sensor and this installation
 // returns about 5-6 MCPS from it. Keep rejecting very weak 1-2 MCPS returns,
 // but allow the measured 3+ MCPS target signal; distance/status/span filters
 // still reject stale and unstable frames.
 constexpr float MIN_SIGNAL_MCPS = 3.0f;
-// Report noisy I2C communication, but let independently validated ROI samples
-// pass after a successful retry. A failed sensor read still gets discarded.
+// Keep a separate warning threshold for diagnostics; the stricter reject
+// threshold below controls whether a clinical result may be accepted.
 constexpr uint8_t I2C_RETRY_WARNING_PER_ROI = 3;
+// A clinical result must not be produced from a scan that needed repeated
+// Wire retries.  The installed bus has returned plausible-looking but wrong
+// distances after long retry bursts, so reject the whole scan instead of
+// printing a value that only appears stable.  This is intentionally strict;
+// a rejected scan is safer than a wrong height and triggers XSHUT recovery in
+// the caller before the next attempt.
+constexpr uint8_t I2C_RETRY_REJECT_PER_ROI = 3;
 // Diagnostic multi-ROI scans compare raw medians; production keeps the
 // fixed 12x12 ROI to avoid changing the sensor's optical configuration.
 constexpr uint16_t MAX_ROI_DISTANCE_DIFFERENCE_MM = 25;

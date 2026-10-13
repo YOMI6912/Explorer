@@ -16,6 +16,12 @@ uint8_t currentRoiHeight = Config::HeightSensor::ROI_HEIGHT;
 uint8_t consecutiveCommunicationFailures = 0;
 FailureCause lastMeasurementFailure = FailureCause::None;
 uint8_t lastReadRetryCount = 0;
+bool hasLastFrameStreamCount = false;
+uint8_t lastFrameStreamCount = 0;
+uint16_t lastFrameDistanceMm = 0;
+float lastFrameSignalMCPS = NAN;
+float lastFrameAmbientMCPS = NAN;
+bool lastReadWasDuplicateFrame = false;
 
 struct HeightSample {
   float heightCm;
@@ -36,21 +42,39 @@ struct ScanStats {
 };
 
 ScanStats lastScanStats;
+
+bool rejectNoisyScan(uint16_t retryReads) {
+  if (retryReads <= Config::HeightSensor::I2C_RETRY_REJECT_PER_ROI) {
+    return false;
+  }
+  lastMeasurementFailure = FailureCause::Communication;
+  Serial.printf(
+      "[VL53L1X] Quality reject: I2C retry reads=%u exceeds max=%u; no height accepted\n",
+      static_cast<unsigned>(retryReads),
+      static_cast<unsigned>(Config::HeightSensor::I2C_RETRY_REJECT_PER_ROI));
+  return true;
+}
 // Match the standalone VL53L1X sketch that returned stable distance readings.
 // 25 kHz lengthens each transaction and did not eliminate this unit's I2C errors.
 // The installed module/cabling produces corrupted range registers at 100 kHz
 // (15-64 m values and frequent requestFrom errors). A slower clock gives the
 // sensor enough margin on this separate Wire0 bus.
-constexpr uint32_t HEIGHT_I2C_CLOCK_HZ = 50000;
-constexpr uint32_t HEIGHT_WIRE_TIMEOUT_MS = 150;
+// Long external wiring is more tolerant at 25 kHz than 50 kHz; keep the
+// slower clock for this diagnostic build while checking intermittent I2C.
+constexpr uint32_t HEIGHT_I2C_CLOCK_HZ = 25000;
+constexpr uint32_t HEIGHT_WIRE_TIMEOUT_MS = 80;
 constexpr uint32_t FALLBACK_TIMING_BUDGET_US = 100000;
 constexpr float FALLBACK_HEIGHT_THRESHOLD_CM = 155.0f;
 constexpr uint8_t MAX_COMMUNICATION_FAILURES = 3;
 constexpr uint8_t STARTUP_SAMPLE_ATTEMPTS = 8;
-constexpr uint8_t MEASUREMENT_RECOVERY_ATTEMPTS = 2;
-constexpr uint32_t MAX_MEASUREMENT_MS = 10000;
-constexpr uint8_t EARLY_STABLE_SAMPLE_COUNT = 5;
-constexpr float EARLY_STABLE_MAX_SPAN_CM = 1.0f;
+constexpr uint8_t MEASUREMENT_RECOVERY_ATTEMPTS = 1;
+constexpr uint32_t MAX_MEASUREMENT_MS = 4000;
+// Do not stop after the first five apparently-stable frames. In practice the
+// first cluster can be a forehead/shoulder return (for example 150--156 mm)
+// and the actual crown appears a few frames later (about 140--142 mm). Keep
+// collecting a larger cluster before selecting the nearest stable target.
+constexpr uint8_t EARLY_STABLE_SAMPLE_COUNT = 7;
+constexpr float EARLY_STABLE_MAX_SPAN_CM = 0.8f;
 // Dark hair / low-reflectance heads on this unit are sometimes reported as
 // SignalFail even though the range register still contains the head distance.
 // Only recover a SignalFail value inside the plausible head interval; this
@@ -60,10 +84,13 @@ constexpr uint16_t SIGNAL_FAIL_HEAD_MAX_DISTANCE_MM = 450;
 constexpr float SIGNAL_FAIL_MIN_MCPS = 0.05f;
 // If the bus dies after one clean head frame, retain it only when it is in
 // the plausible head-distance band for this 197.3 cm mount.  This covers
-// people roughly 150--190 cm tall while excluding the 500--800 mm torso/floor
-// returns seen in the failing logs.
-constexpr uint16_t SINGLE_HEAD_MIN_DISTANCE_MM = 100;
+// people roughly 145--190 cm tall while excluding the 500--800 mm torso/floor
+// returns seen in the failing logs. Keep a little margin for tall users near
+// the 190 cm end of the installation.
+constexpr uint16_t SINGLE_HEAD_MIN_DISTANCE_MM = 60;
 constexpr uint16_t SINGLE_HEAD_MAX_DISTANCE_MM = 550;
+constexpr uint16_t DIAGNOSTIC_MAX_DISTANCE_MM = 700;
+bool extendedDistanceRangeActive = false;
 constexpr float SINGLE_HEAD_MIN_MCPS = 6.0f;
 
 bool isRecoverableHeadStatus(VL53L1X::RangeStatus status,
@@ -74,8 +101,7 @@ bool isRecoverableHeadStatus(VL53L1X::RangeStatus status,
   }
   return status == VL53L1X::SignalFail ||
          status == VL53L1X::SigmaFail ||
-         status == VL53L1X::XtalkSignalFail ||
-         status == VL53L1X::WrapTargetFail;
+         status == VL53L1X::XtalkSignalFail;
 }
 bool recoveryResetPending = false;
 VL53L1X::DistanceMode activeDistanceMode = VL53L1X::Long;
@@ -149,17 +175,19 @@ bool setRoiAndDiscard(uint8_t width, uint8_t height) {
   if (!initialized && !begin()) {
     return false;
   }
-  // A repeated diagnostic scan can reuse the running ROI. Stopping and
-  // restarting the sensor on every scan creates several extra transactions
-  // on this intermittently failing I2C link.
+  // A repeated scan can reuse the configured ROI. In single-shot mode there
+  // is no continuous stream to stop; changing the ROI is followed by two
+  // fresh shots so the first frame after the register write is discarded.
   if (currentRoiWidth == width && currentRoiHeight == height) {
     return true;
   }
-  sensor.stopContinuous();
-  if (sensor.communicationError()) {
-    initialized = false;
-    recoveryResetPending = true;
-    return false;
+  if (!Config::HeightSensor::USE_SINGLE_SHOT) {
+    sensor.stopContinuous();
+    if (sensor.communicationError()) {
+      initialized = false;
+      recoveryResetPending = true;
+      return false;
+    }
   }
 
   sensor.setROISize(width, height);
@@ -177,15 +205,21 @@ bool setRoiAndDiscard(uint8_t width, uint8_t height) {
   currentRoiWidth = width;
   currentRoiHeight = height;
 
-  sensor.startContinuous(Config::HeightSensor::CONTINUOUS_PERIOD_MS);
-  if (sensor.communicationError()) {
-    initialized = false;
-    recoveryResetPending = true;
-    return false;
+  if (!Config::HeightSensor::USE_SINGLE_SHOT) {
+    sensor.startContinuous(Config::HeightSensor::CONTINUOUS_PERIOD_MS);
+    if (sensor.communicationError()) {
+      initialized = false;
+      recoveryResetPending = true;
+      return false;
+    }
+    delay(Config::HeightSensor::CONTINUOUS_PERIOD_MS * 2 + 20);
   }
-  delay(Config::HeightSensor::CONTINUOUS_PERIOD_MS * 2 + 20);
   for (uint8_t frame = 0; frame < 2; ++frame) {
-    sensor.read();
+    if (Config::HeightSensor::USE_SINGLE_SHOT) {
+      sensor.readSingle();
+    } else {
+      sensor.read();
+    }
     sensor.timeoutOccurred();
     if (sensor.communicationError()) {
       initialized = false;
@@ -199,6 +233,8 @@ bool setRoiAndDiscard(uint8_t width, uint8_t height) {
 
 bool begin() {
   Serial.println("[VL53L1X] Initializing...");
+  hasLastFrameStreamCount = false;
+  lastReadWasDuplicateFrame = false;
   // VL53L1X owns Wire0 exclusively; LCD is isolated on Wire1.
   // Fully reset Wire0 before assigning its pins. This is the important part
   // of the standalone pin-mapping scanner that reliably finds 0x29. Without
@@ -287,24 +323,34 @@ bool begin() {
   currentRoiHeight = Config::HeightSensor::ROI_HEIGHT;
   const bool timingReady = sensor.setMeasurementTimingBudget(
       activeTimingBudgetUs);
-  sensor.startContinuous(Config::HeightSensor::CONTINUOUS_PERIOD_MS);
+  if (!Config::HeightSensor::USE_SINGLE_SHOT) {
+    sensor.startContinuous(Config::HeightSensor::CONTINUOUS_PERIOD_MS);
+  }
   if (!modeReady || !timingReady || sensor.communicationError()) {
     Serial.println("[VL53L1X] ERROR: ranging configuration failed");
     recoveryResetPending = true;
     return false;
   }
-  Serial.printf("[VL53L1X] Distance mode=%s timing=%lu us\n",
+  Serial.printf("[VL53L1X] Distance mode=%s timing=%lu us mode=%s\n",
                 activeDistanceMode == VL53L1X::Long ? "Long" :
                 activeDistanceMode == VL53L1X::Medium ? "Medium" : "Short",
-                static_cast<unsigned long>(activeTimingBudgetUs));
+                static_cast<unsigned long>(activeTimingBudgetUs),
+                Config::HeightSensor::USE_SINGLE_SHOT ? "single-shot" :
+                                                         "continuous");
 
   // init() can return true after a transient I2C error even though continuous
   // ranging never started. Require an actual sensor update before reporting
   // that this module is ready.
   bool rangingStarted = false;
   for (uint8_t attempt = 0; attempt < STARTUP_SAMPLE_ATTEMPTS; ++attempt) {
-    delay(Config::HeightSensor::CONTINUOUS_PERIOD_MS + 20);
-    sensor.read();
+    if (!Config::HeightSensor::USE_SINGLE_SHOT) {
+      delay(Config::HeightSensor::CONTINUOUS_PERIOD_MS + 20);
+    }
+    if (Config::HeightSensor::USE_SINGLE_SHOT) {
+      sensor.readSingle();
+    } else {
+      sensor.read();
+    }
     const uint16_t startupDistance = sensor.ranging_data.range_mm;
     // At boot the platform is empty, so the first real return can be the
     // floor/background around 1.9 m.  Accept that as proof that ranging is
@@ -350,7 +396,11 @@ bool activeSessionHealthy() {
   // session and I2C link are alive. Optical statuses such as SignalFail are
   // acceptable here because this is a communication check, not a height.
   for (uint8_t attempt = 0; attempt < 2; ++attempt) {
-    sensor.read();
+    if (Config::HeightSensor::USE_SINGLE_SHOT) {
+      sensor.readSingle();
+    } else {
+      sensor.read();
+    }
     const bool timedOut = sensor.timeoutOccurred();
     const bool communicationFailed = sensor.communicationError();
     if (!timedOut && !communicationFailed && sensor.last_status == 0 &&
@@ -360,7 +410,9 @@ bool activeSessionHealthy() {
       Serial.println("[VL53L1X] Existing ranging session is healthy");
       return true;
     }
-    delay(Config::HeightSensor::CONTINUOUS_PERIOD_MS + 10);
+    delay(Config::HeightSensor::USE_SINGLE_SHOT
+              ? 10
+              : Config::HeightSensor::CONTINUOUS_PERIOD_MS + 10);
   }
 
   initialized = false;
@@ -373,28 +425,52 @@ FailureCause lastFailureCause() {
   return lastMeasurementFailure;
 }
 
+bool lastScanHighConfidence() {
+  return lastMeasurementFailure == FailureCause::None &&
+         lastScanStats.validSamples >=
+             Config::HeightSensor::MIN_HEAD_CLUSTER_SAMPLES &&
+         isfinite(lastScanStats.spanCm) &&
+         lastScanStats.spanCm <= 0.8f &&
+         isfinite(lastScanStats.medianDistanceMm) &&
+         lastScanStats.medianDistanceMm >= SINGLE_HEAD_MIN_DISTANCE_MM &&
+         lastScanStats.medianDistanceMm <= SINGLE_HEAD_MAX_DISTANCE_MM &&
+         isfinite(lastScanStats.medianSignalMCPS) &&
+         lastScanStats.medianSignalMCPS >= 8.0f;
+}
+
 bool readDistanceMm(uint16_t &distanceMm) {
   lastReadRetryCount = 0;
+  lastReadWasDuplicateFrame = false;
   if (!initialized) {
     return false;
   }
 
-  // A single requestFrom() error is common on this clone while the next range
-  // result is being latched. Retry the same sample before counting it as a
-  // communication failure.
+  // In single-shot mode an I2C error invalidates the whole shot. Do not read
+  // the same frame again: discard it and arm XSHUT recovery for the next
+  // sample. A timeout without a bus error may receive one retry because the
+  // sensor can simply be late asserting data-ready.
   bool readOk = false;
+  bool communicationFailureThisRead = false;
   uint32_t retryEvents = 0;
-  for (uint8_t retry = 0; retry < 3; ++retry) {
-    distanceMm = sensor.read();
+  for (uint8_t retry = 0; retry < 2; ++retry) {
+    distanceMm = Config::HeightSensor::USE_SINGLE_SHOT
+                     ? sensor.readSingle()
+                     : sensor.read();
     retryEvents += sensor.lastReadI2CRetryCount();
-    if (!sensor.timeoutOccurred() && !sensor.communicationError() &&
+    const bool timedOut = sensor.timeoutOccurred();
+    const bool busError = sensor.communicationError() || sensor.last_status != 0;
+    if (!timedOut && !busError &&
         sensor.last_status == 0 &&
         sensor.ranging_data.range_status != VL53L1X::None) {
       readOk = true;
       break;
     }
-    if (retry < 2) {
-      delay(12);
+    if (busError) {
+      communicationFailureThisRead = true;
+      break;
+    }
+    if (retry < 1) {
+      delay(8);
     }
   }
   lastReadRetryCount = static_cast<uint8_t>(
@@ -402,18 +478,48 @@ bool readDistanceMm(uint16_t &distanceMm) {
 
   if (!readOk) {
     ++consecutiveCommunicationFailures;
-    Serial.printf("[VL53L1X] Read communication failure %u/%u\n",
-                  consecutiveCommunicationFailures,
-                  MAX_COMMUNICATION_FAILURES);
-    if (consecutiveCommunicationFailures >= MAX_COMMUNICATION_FAILURES) {
+    if (communicationFailureThisRead) {
       initialized = false;
       recoveryResetPending = true;
-      Serial.println("[VL53L1X] Sensor offline; recovery armed");
+      Serial.printf("[VL53L1X] I2C communication failure; frame discarded, "
+                    "XSHUT recovery armed (%u retry reads)\n",
+                    static_cast<unsigned>(retryEvents));
+    } else {
+      Serial.printf("[VL53L1X] Read timeout; frame discarded (%u/%u)\n",
+                    consecutiveCommunicationFailures,
+                    MAX_COMMUNICATION_FAILURES);
+      if (consecutiveCommunicationFailures >= MAX_COMMUNICATION_FAILURES) {
+        initialized = false;
+        recoveryResetPending = true;
+        Serial.println("[VL53L1X] Sensor offline; recovery armed");
+      }
     }
     return false;
   }
 
   consecutiveCommunicationFailures = 0;
+
+  const uint8_t streamCount = sensor.lastStreamCount();
+  const float frameSignalMCPS =
+      sensor.ranging_data.peak_signal_count_rate_MCPS;
+  const float frameAmbientMCPS =
+      sensor.ranging_data.ambient_count_rate_MCPS;
+  // This installed module sometimes repeats its stream counter even when the
+  // range and signal change. Only an identical result with the same counter
+  // is strong enough evidence that the interrupt latched an old frame.
+  if (hasLastFrameStreamCount && streamCount == lastFrameStreamCount &&
+      distanceMm == lastFrameDistanceMm &&
+      frameSignalMCPS == lastFrameSignalMCPS &&
+      frameAmbientMCPS == lastFrameAmbientMCPS) {
+    lastReadWasDuplicateFrame = true;
+    Serial.println("[VL53L1X] Identical stream frame; skipping");
+    return false;
+  }
+  lastFrameStreamCount = streamCount;
+  lastFrameDistanceMm = distanceMm;
+  lastFrameSignalMCPS = frameSignalMCPS;
+  lastFrameAmbientMCPS = frameAmbientMCPS;
+  hasLastFrameStreamCount = true;
 
   const bool phaseCheckCandidate =
       sensor.ranging_data.range_status == VL53L1X::OutOfBoundsFail;
@@ -491,7 +597,11 @@ bool readHeightCm(float &heightCm) {
   float lastSignalMCPS = NAN;
   float lastAmbientMCPS = NAN;
   bool earlyStableCluster = false;
+  bool interruptedByCommunication = false;
   const uint32_t startedAt = millis();
+  const uint16_t acceptedHeadMaxDistanceMm =
+      extendedDistanceRangeActive ? DIAGNOSTIC_MAX_DISTANCE_MM
+                                  : SINGLE_HEAD_MAX_DISTANCE_MM;
 
   for (uint8_t recovery = 0;
        recovery <= MEASUREMENT_RECOVERY_ATTEMPTS &&
@@ -533,6 +643,10 @@ bool readHeightCm(float &heightCm) {
       const bool distanceOk = readDistanceMm(distanceMm);
       totalRetryReads += lastReadRetryCount;
       if (!distanceOk) {
+        if (lastReadWasDuplicateFrame) {
+          delay(20);
+          continue;
+        }
         const bool busFailed = consecutiveCommunicationFailures > 0 ||
                                !initialized;
         communicationFailureSeen |= busFailed;
@@ -615,18 +729,6 @@ bool readHeightCm(float &heightCm) {
         continue;
       }
 
-      // A failed interrupt-clear transaction can make this clone return the
-      // same completed frame again. Repeated frames are not new evidence of a
-      // stable target, even when their range status and signal look valid.
-      if (validCount > 0 &&
-          samples[validCount - 1].distanceMm == distanceMm &&
-          samples[validCount - 1].signalMCPS == signalMCPS &&
-          samples[validCount - 1].ambientMCPS == ambientMCPS) {
-        Serial.println("[VL53L1X] Duplicate ranging frame; skipping");
-        delay(20);
-        continue;
-      }
-
       const float candidate =
           Config::HeightSensor::SENSOR_MOUNT_HEIGHT_CM -
           (static_cast<float>(distanceMm) / 10.0f) +
@@ -644,7 +746,7 @@ bool readHeightCm(float &heightCm) {
         samples[validCount++] = {candidate, distanceMm, signalMCPS,
                                  ambientMCPS};
         if (distanceMm >= SINGLE_HEAD_MIN_DISTANCE_MM &&
-            distanceMm <= SINGLE_HEAD_MAX_DISTANCE_MM &&
+            distanceMm <= acceptedHeadMaxDistanceMm &&
             isfinite(signalMCPS) && signalMCPS >= SINGLE_HEAD_MIN_MCPS) {
           ++strongSingleHeadSamples;
           strongSingleHeadSum += candidate;
@@ -697,16 +799,7 @@ bool readHeightCm(float &heightCm) {
                     distancesOutsideWindow, opticalFailures);
     }
 
-    // If a stable cluster was already captured, keep it even when the bus
-    // fails on a later frame. Reinitializing here would discard the good
-    // measurements and make an otherwise readable person fail the whole scan.
-    if (communicationFailureSeen &&
-        (validCount >= Config::HeightSensor::MIN_VALID_SAMPLES ||
-         strongSingleHeadSamples > 0)) {
-      Serial.printf("[VL53L1X] Preserving %u valid + %u strong head samples before late I2C failure\n",
-                    validCount, strongSingleHeadSamples);
-      break;
-    }
+    interruptedByCommunication |= communicationFailureSeen;
 
     if (!communicationFailureSeen || recovery == MEASUREMENT_RECOVERY_ATTEMPTS) {
       Serial.println("[VL53L1X] No stable valid range; check target and sensor alignment");
@@ -724,8 +817,13 @@ bool readHeightCm(float &heightCm) {
     Serial.println("[VL53L1X] Sensor still offline at end of scan; queue not sent");
     return false;
   }
-  if (!initialized) {
-    Serial.println("[VL53L1X] Sensor went offline after usable samples; processing preserved cluster");
+  // Never combine samples collected before a bus error with a later session.
+  // Even a tight-looking cluster may contain a latched frame from the failed
+  // transaction, so the whole interrupted scan is rejected.
+  if (!initialized && interruptedByCommunication) {
+    lastMeasurementFailure = FailureCause::Communication;
+    Serial.println("[VL53L1X] Discarding interrupted scan after I2C failure; no height accepted");
+    return false;
   }
 
   if (validCount < Config::HeightSensor::MIN_VALID_SAMPLES &&
@@ -735,9 +833,11 @@ bool readHeightCm(float &heightCm) {
         totalRetryReads > 255 ? 255 : totalRetryReads);
     lastScanStats.weakSignalSamples = weakSignalSamples;
     lastScanStats.phaseCheckSamples = phaseCheckSamples;
+    // Recovered I2C retries warn of a noisy bus, but do not by themselves
+    // prove the ranging session is offline. Retry the target in this session
+    // unless the driver actually marked it unavailable.
     lastMeasurementFailure =
-        communicationFailures > 0 || !initialized
-            ? FailureCause::Communication : FailureCause::Target;
+        initialized ? FailureCause::Target : FailureCause::Communication;
     Serial.printf("[VL53L1X] Quality reject: valid=%u (need >=%u, attempts<=%u) retryReads=%u weakSignal=%u I2Cfail=%u optical=%u hardware=%u outside=%u lastSignal=%.2f ambient=%.2f MCPS\n",
                   validCount,
                   Config::HeightSensor::MIN_VALID_SAMPLES,
@@ -748,8 +848,13 @@ bool readHeightCm(float &heightCm) {
     return false;
   }
 
-  if (validCount < Config::HeightSensor::MIN_VALID_SAMPLES &&
-      strongSingleHeadSamples > 0) {
+  // Never turn a single strong-looking frame into a clinical height. A
+  // torso/floor return can have high signal and was previously accepted as
+  // a 147 cm "single-head fallback". Require a real small cluster first.
+  if (validCount < Config::HeightSensor::MIN_HEAD_CLUSTER_SAMPLES &&
+      strongSingleHeadSamples >= Config::HeightSensor::MIN_HEAD_CLUSTER_SAMPLES &&
+      strongSingleHeadMaxHeight - strongSingleHeadMinHeight <=
+          Config::HeightSensor::MAX_SAMPLE_SPAN_CM) {
     heightCm = strongSingleHeadSum /
                static_cast<float>(strongSingleHeadSamples);
     lastScanStats.validSamples = strongSingleHeadSamples;
@@ -762,6 +867,9 @@ bool readHeightCm(float &heightCm) {
         strongSingleHeadSignalSum /
         static_cast<float>(strongSingleHeadSamples);
     lastScanStats.spanCm = 0.0f;
+    if (rejectNoisyScan(totalRetryReads)) {
+      return false;
+    }
     lastMeasurementFailure = FailureCause::None;
     Serial.printf("[VL53L1X] Stable single-head fallback=%.1f cm from %u strong frame(s)\n",
                   heightCm, strongSingleHeadSamples);
@@ -773,7 +881,7 @@ bool readHeightCm(float &heightCm) {
   // 369 mm head versus 493-501 mm body). Prefer the tight, strong head band
   // whenever it is internally consistent, even if the background has more
   // frames; otherwise the nearest-cluster-by-count logic reports ~148 cm.
-  if (strongSingleHeadSamples > 0 &&
+  if (strongSingleHeadSamples >= Config::HeightSensor::MIN_HEAD_CLUSTER_SAMPLES &&
       strongSingleHeadMaxHeight - strongSingleHeadMinHeight <=
           Config::HeightSensor::MAX_SAMPLE_SPAN_CM) {
     heightCm = strongSingleHeadSum /
@@ -789,6 +897,9 @@ bool readHeightCm(float &heightCm) {
         static_cast<float>(strongSingleHeadSamples);
     lastScanStats.spanCm =
         strongSingleHeadMaxHeight - strongSingleHeadMinHeight;
+    if (rejectNoisyScan(totalRetryReads)) {
+      return false;
+    }
     lastMeasurementFailure = FailureCause::None;
     Serial.printf("[VL53L1X] Prioritized head cluster=%.1f cm from %u frame(s); ignored %u background frame(s)\n",
                   heightCm, strongSingleHeadSamples,
@@ -815,10 +926,10 @@ bool readHeightCm(float &heightCm) {
   int bestEnd = -1;
   float bestMedianHeight = -INFINITY;
   for (uint8_t start = 0;
-       start + Config::HeightSensor::MIN_VALID_SAMPLES <= validCount;
+       start + Config::HeightSensor::MIN_HEAD_CLUSTER_SAMPLES <= validCount;
        ++start) {
     for (uint8_t end = static_cast<uint8_t>(
-             start + Config::HeightSensor::MIN_VALID_SAMPLES - 1);
+             start + Config::HeightSensor::MIN_HEAD_CLUSTER_SAMPLES - 1);
          end < validCount; ++end) {
       const float clusterSpan =
           samples[end].heightCm - samples[start].heightCm;
@@ -836,7 +947,8 @@ bool readHeightCm(float &heightCm) {
   }
 
   if (bestStart < 0 || bestEnd < bestStart) {
-    lastMeasurementFailure = FailureCause::Target;
+    lastMeasurementFailure =
+        initialized ? FailureCause::Target : FailureCause::Communication;
     Serial.printf("[VL53L1X] Quality reject: no stable cluster in %u valid frames\n",
                   validCount);
     return false;
@@ -862,6 +974,22 @@ bool readHeightCm(float &heightCm) {
   const float medianDistanceMm = medianOf(distances, selectedCount);
   const float medianSignalMCPS = medianOf(signals, selectedCount);
   const float medianAmbientMCPS = medianOf(ambients, selectedCount);
+
+  // A stable cluster is not automatically the top of the head. In the
+  // latest failure the sensor saw a very stable object at 662--676 mm and
+  // would otherwise have printed a convincing but false 131 cm height.
+  // Reject clusters outside the installation's plausible head-distance band
+  // so the caller retries/rejects instead of printing a wrong measurement.
+  if (!isfinite(medianDistanceMm) ||
+      medianDistanceMm < SINGLE_HEAD_MIN_DISTANCE_MM ||
+      medianDistanceMm > acceptedHeadMaxDistanceMm) {
+    lastMeasurementFailure = FailureCause::Target;
+    Serial.printf("[VL53L1X] Quality reject: stable cluster distance=%.0f mm outside head band %u..%u mm\n",
+                  medianDistanceMm,
+                  static_cast<unsigned>(SINGLE_HEAD_MIN_DISTANCE_MM),
+                  static_cast<unsigned>(acceptedHeadMaxDistanceMm));
+    return false;
+  }
   lastScanStats.validSamples = selectedCount;
   lastScanStats.retryReads = static_cast<uint8_t>(
       totalRetryReads > 255 ? 255 : totalRetryReads);
@@ -900,17 +1028,16 @@ bool readHeightCm(float &heightCm) {
       ++stableCount;
     }
   }
-  if (stableCount < Config::HeightSensor::MIN_VALID_SAMPLES ||
+  if (stableCount < Config::HeightSensor::MIN_HEAD_CLUSTER_SAMPLES ||
       spanCm > Config::HeightSensor::MAX_SAMPLE_SPAN_CM) {
-    lastMeasurementFailure = FailureCause::Target;
+    lastMeasurementFailure =
+        initialized ? FailureCause::Target : FailureCause::Communication;
     Serial.printf("[VL53L1X] Quality reject: stable=%u/%u selected, totalValid=%u span=%.1fcm\n",
                   stableCount, selectedCount, validCount, spanCm);
     return false;
   }
-  if (totalRetryReads >
-      Config::HeightSensor::I2C_RETRY_WARNING_PER_ROI) {
-    Serial.printf("[VL53L1X] I2C warning: %u retry reads; accepting stable ROI samples\n",
-                  static_cast<unsigned>(totalRetryReads));
+  if (rejectNoisyScan(totalRetryReads)) {
+    return false;
   }
   heightCm = sum / static_cast<float>(stableCount);
   lastMeasurementFailure = FailureCause::None;
@@ -1040,7 +1167,7 @@ bool readHeightCmRoi12Diagnostic(float &heightCm) {
   return readHeightCmFixedRoi(heightCm);
 }
 
-bool readHeightCmFixedRoi(float &heightCm) {
+bool readHeightCmFixedRoi(float &heightCm, bool extendedDistanceRange) {
   if (!initialized && !begin()) {
     lastMeasurementFailure = FailureCause::Communication;
     return false;
@@ -1052,7 +1179,10 @@ bool readHeightCmFixedRoi(float &heightCm) {
     lastMeasurementFailure = FailureCause::Communication;
     return false;
   }
+  const bool previousExtendedRange = extendedDistanceRangeActive;
+  extendedDistanceRangeActive = extendedDistanceRange;
   const bool measured = readHeightCm(heightCm);
+  extendedDistanceRangeActive = previousExtendedRange;
   if (currentRoiWidth != Config::HeightSensor::ROI_WIDTH ||
       currentRoiHeight != Config::HeightSensor::ROI_HEIGHT) {
     lastMeasurementFailure = FailureCause::Communication;

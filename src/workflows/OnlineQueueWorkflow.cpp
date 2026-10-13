@@ -12,6 +12,7 @@
 
 #include "config.h"
 #include "devices/LcdDevice.h"
+#include "devices/RemoteHeightLink.h"
 #include "devices/UsbPrinter.h"
 #include "emqx_ca.h"
 
@@ -30,6 +31,7 @@ MQTTClient mqtt(Config::QueueASerialTest::MQTT_READ_BUFFER_SIZE,
                 Config::QueueASerialTest::MQTT_WRITE_BUFFER_SIZE);
 Preferences preferences;
 bool preferencesReady = false;
+bool clinicStaDeferredForHeight = false;
 
 State state = State::Idle;
 String otpBuffer;
@@ -1209,8 +1211,10 @@ void startWifi() {
   lastWifiAttemptAt = millis();
   Serial.printf("[Wi-Fi] กำลังเชื่อมต่อเครือข่าย %s...\n",
                 Config::Network::WIFI_SSID);
-  WiFi.mode(WIFI_STA);
-  WiFi.setAutoReconnect(true);
+  // AP+STA is safe when both interfaces use the clinic AP's fixed channel.
+  // The private C3 AP is started first on that same channel.
+  WiFi.mode(Config::Features::REMOTE_HEIGHT_ENABLED ? WIFI_AP_STA : WIFI_STA);
+  WiFi.setAutoReconnect(!Config::Features::REMOTE_HEIGHT_ENABLED);
   WiFi.setSleep(false);
   WiFi.begin(Config::Network::WIFI_SSID, Config::Network::WIFI_PASSWORD);
 }
@@ -1284,7 +1288,13 @@ void updateConnections() {
   }
 
   if (!wifiConnected) {
-    if (now - lastWifiAttemptAt >= Config::QueueASerialTest::WIFI_RETRY_MS) {
+    // Retry the clinic STA slowly; the private AP uses the same fixed channel
+    // so a retry does not create a permanent channel mismatch for C3.
+    const uint32_t retryInterval =
+        Config::Features::REMOTE_HEIGHT_ENABLED
+            ? 60000UL
+            : Config::QueueASerialTest::WIFI_RETRY_MS;
+    if (now - lastWifiAttemptAt >= retryInterval) {
       retryWifi();
     }
     return;
@@ -1374,6 +1384,10 @@ void begin() {
   mqtt.setCleanSession(true);
 
   printHelp();
+  // Allow the S3 to join the clinic hotspot while its private height AP is
+  // running. Both interfaces share one radio, so the hotspot should be 2.4
+  // GHz; C3 may reconnect once when the shared channel is selected.
+  clinicStaDeferredForHeight = false;
   startWifi();
   showReadyScreen();
 }

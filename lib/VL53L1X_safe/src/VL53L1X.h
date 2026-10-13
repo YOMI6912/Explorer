@@ -1315,6 +1315,9 @@ class VL53L1X
 
     bool communicationError() const { return io_error; }
     uint16_t lastReadI2CRetryCount() const { return last_read_i2c_retries; }
+    // Counter from the same result burst as the reported range. It advances
+    // for each new ranging frame and lets callers reject a latched old frame.
+    uint8_t lastStreamCount() const { return results.stream_count; }
 
     static const char * rangeStatusToString(RangeStatus status);
 

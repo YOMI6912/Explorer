@@ -39,6 +39,14 @@ void VL53L1X::setAddress(uint8_t new_addr)
 // mode.
 bool VL53L1X::init(bool io_2v8)
 {
+  // The application can call init() again on this same object after toggling
+  // XSHUT. The hardware has then lost its ranging calibration, so do not
+  // reuse the host-side state from the previous continuous session.
+  calibrated = false;
+  saved_vhv_init = 0;
+  saved_vhv_timeout = 0;
+  did_timeout = false;
+  last_read_i2c_retries = 0;
   io_error = false;
   // check model ID and module type registers (values specified in datasheet)
   if (readReg16Bit(IDENTIFICATION__MODEL_ID) != 0xEACC) { return false; }
