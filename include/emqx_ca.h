@@ -2,7 +2,6 @@
 
 #include <Arduino.h>
 
-// DigiCert Global Root G2 จากไฟล์ CA ที่ EMQX ให้มา
 constexpr char EMQX_CA_CERT[] PROGMEM = R"CERT(
 -----BEGIN CERTIFICATE-----
 MIIDjjCCAnagAwIBAgIQAzrx5qcRqaC7KGSxHQn65TANBgkqhkiG9w0BAQsFADBh

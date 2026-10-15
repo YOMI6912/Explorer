@@ -15,7 +15,6 @@ CODE_TEXT = (
     "if_night:print('sweet_dreams');"
 )
 
-
 def show_code_bear(image_path):
     if not image_path.exists():
         print(f"ไม่พบไฟล์รูป: {image_path}")
@@ -57,7 +56,6 @@ def show_code_bear(image_path):
 
         row += "\033[0m"
         print(row)
-
 
 # เปิดใช้งานสี ANSI บน Windows
 if os.name == "nt":

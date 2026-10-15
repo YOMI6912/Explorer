@@ -5,3 +5,7 @@
 .vscode/ipch
 include/secrets.h
 ESP32S3_Clinic_Modular_backup_*.zip
+height_link_*.log
+c3_remote/.pio/
+c3_remote/.vscode/
+c3_remote/include/clinic_network_local.h

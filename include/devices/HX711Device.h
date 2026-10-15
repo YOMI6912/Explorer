@@ -10,5 +10,5 @@ bool readRaw(long &rawValue);
 bool readWeightKg(float &weightKg);
 bool tare(uint8_t samples = 10);
 
-}  // namespace HX711Device
+}
 

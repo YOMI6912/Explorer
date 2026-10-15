@@ -6,8 +6,7 @@
 
 namespace LcdDevice {
 namespace {
-// LCD uses the second ESP32 I2C controller on GPIO1/2. VL53L1X uses Wire0
-// on GPIO8/9, so LCD traffic cannot disturb height measurements.
+
 TwoWire lcdWire(1);
 bool initialized = false;
 bool backlightEnabled = true;
@@ -65,10 +64,10 @@ void initializeController() {
   write4Bits(0x30);
   delayMicroseconds(150);
   write4Bits(0x20);
-  command(0x28);  // 4-bit, 2-line font mode (also used by 20x4 modules)
-  command(0x0C);  // display on, cursor and blink off
-  command(0x06);  // left-to-right entry mode
-  command(0x01);  // clear
+  command(0x28);
+  command(0x0C);
+  command(0x06);
+  command(0x01);
   delayMicroseconds(2000);
 }
 
@@ -97,7 +96,7 @@ void writeCachedLines() {
     }
   }
 }
-}  // namespace
+}
 
 bool begin() {
   lcdWire.begin(Config::Pins::LCD_I2C_SDA,
@@ -228,4 +227,4 @@ void showHardwareStatus(bool loadCellReady,
   setLine(3, "USB HOST:" + stateText(printerHostReady));
 }
 
-}  // namespace LcdDevice
+}

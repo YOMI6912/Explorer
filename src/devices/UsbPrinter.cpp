@@ -198,9 +198,6 @@ bool openPrinter(uint8_t address) {
   Serial.println("[PRINTER] WINMAX-8032 ready");
 
   delay(Config::Printer::READY_DELAY_MS);
-  if (Config::Printer::PRINT_TEST_WHEN_CONNECTED) {
-    printTest();
-  }
   return true;
 }
 
@@ -231,7 +228,7 @@ void clientTask(void *) {
     }
   }
 }
-}  // namespace
+}
 
 bool begin() {
   if (hostStarted) {
@@ -288,8 +285,7 @@ bool begin() {
 }
 
 void update() {
-  // USB events run in FreeRTOS tasks. Keep this function so main.cpp has
-  // the same begin()/update() pattern as the other device modules.
+
 }
 
 bool isReady() {
@@ -369,28 +365,28 @@ bool printQueueTicket(const String &queueNumber,
   TicketBuffer ticket;
 
   bool built = true;
-  built &= ticket.appendByte(0x1B);  // ESC @ : initialize
+  built &= ticket.appendByte(0x1B);
   built &= ticket.appendByte(0x40);
-  built &= ticket.appendByte(0x1B);  // ESC a 1 : center
+  built &= ticket.appendByte(0x1B);
   built &= ticket.appendByte(0x61);
   built &= ticket.appendByte(0x01);
-  built &= ticket.appendByte(0x1B);  // ESC E 1 : bold on
+  built &= ticket.appendByte(0x1B);
   built &= ticket.appendByte(0x45);
   built &= ticket.appendByte(0x01);
   built &= ticket.appendText("CLINIC QUEUE\n");
-  built &= ticket.appendByte(0x1D);  // GS ! 0x11 : double size
+  built &= ticket.appendByte(0x1D);
   built &= ticket.appendByte(0x21);
   built &= ticket.appendByte(0x11);
   built &= ticket.appendSafeAscii(queueNumber, 24);
   built &= ticket.appendText("\n");
-  built &= ticket.appendByte(0x1D);  // GS ! 0 : normal size
+  built &= ticket.appendByte(0x1D);
   built &= ticket.appendByte(0x21);
   built &= ticket.appendByte(0x00);
-  built &= ticket.appendByte(0x1B);  // ESC E 0 : bold off
+  built &= ticket.appendByte(0x1B);
   built &= ticket.appendByte(0x45);
   built &= ticket.appendByte(0x00);
   built &= ticket.appendText("--------------------------------\n");
-  built &= ticket.appendByte(0x1B);  // ESC a 0 : left
+  built &= ticket.appendByte(0x1B);
   built &= ticket.appendByte(0x61);
   built &= ticket.appendByte(0x00);
   built &= ticket.appendText("Queue : ");
@@ -421,7 +417,7 @@ bool printQueueTicket(const String &queueNumber,
   built &= ticket.appendText("\n--------------------------------\n");
   built &= ticket.appendText("Please wait for your queue\n");
   built &= ticket.appendText("Thank you\n");
-  built &= ticket.appendByte(0x1B);  // ESC d n : feed n lines
+  built &= ticket.appendByte(0x1B);
   built &= ticket.appendByte(0x64);
   built &= ticket.appendByte(Config::Printer::PAPER_FEED_LINES);
 
@@ -433,24 +429,4 @@ bool printQueueTicket(const String &queueNumber,
   return write(ticket.data, ticket.length);
 }
 
-bool printTest() {
-  const uint8_t printData[] = {
-      0x1B, 0x40,              // ESC @ : initialize
-      0x1B, 0x61, 0x01,        // center
-      'W', 'I', 'N', 'M', 'A', 'X', '-', '8', '0', '3', '2', '\n',
-      'E', 'S', 'P', '3', '2', '-', 'S', '3', '\n',
-      'U', 'S', 'B', ' ', 'H', 'O', 'S', 'T', '\n',
-      '\n',
-      0x1B, 0x61, 0x00,        // left
-      'T', 'E', 'S', 'T', ' ', 'P', 'R', 'I', 'N', 'T', '\n',
-      'W', 'e', 'i', 'g', 'h', 't', ':', ' ',
-      '5', '2', '.', '4', '0', ' ', 'k', 'g', '\n',
-      'H', 'e', 'i', 'g', 'h', 't', ':', ' ',
-      '1', '6', '5', '.', '0', ' ', 'c', 'm', '\n',
-      'P', 'R', 'I', 'N', 'T', 'E', 'R', ' ', 'R', 'E', 'A', 'D', 'Y', '\n',
-      0x1B, 0x64, Config::Printer::PAPER_FEED_LINES};
-
-  return write(printData, sizeof(printData));
 }
-
-}  // namespace UsbPrinter

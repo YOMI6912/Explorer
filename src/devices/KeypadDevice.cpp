@@ -54,8 +54,6 @@ bool findKeypadAddress() {
     return true;
   }
 
-  // PCF8574 uses 0x20-0x27 and PCF8574A uses 0x38-0x3F. Skip the LCD
-  // address so a missing keypad cannot be mistaken for the LCD backpack.
   const uint8_t ranges[][2] = {{0x20, 0x27}, {0x38, 0x3F}};
   for (const auto &range : ranges) {
     for (uint8_t address = range[0]; address <= range[1]; ++address) {
@@ -99,8 +97,7 @@ bool scanKey(char &key) {
   key = 0;
 
   for (uint8_t row = 0; row < 4; ++row) {
-    // PCF8574 pins written HIGH act as inputs. Drive one row LOW at a time
-    // and inspect the four column pins for a pressed key.
+
     const uint8_t output =
         static_cast<uint8_t>(0xFFU & ~(1U << Config::Keypad::ROW_BITS[row]));
     if (!writePort(output)) {
@@ -125,10 +122,9 @@ bool scanKey(char &key) {
     }
   }
 
-  // Release every PCF8574 pin after each scan.
   return writePort(0xFF);
 }
-}  // namespace
+}
 
 bool begin() {
   if (Config::Keypad::DIRECT_GPIO) {
@@ -157,7 +153,7 @@ bool begin() {
     Serial.println("[KEYPAD] Rows: GPIO6, GPIO7, GPIO10, GPIO11");
     Serial.println("[KEYPAD] Columns: GPIO12, GPIO13, GPIO14, GPIO15");
     if (key != 0) {
-      Serial.println("[KEYPAD] WARNING: release all keys before testing");
+      Serial.println("[KEYPAD] WARNING: release all keys before use");
     }
     return true;
   }
@@ -189,7 +185,7 @@ bool begin() {
 
   Serial.printf("[KEYPAD] Ready at I2C address 0x%02X\n", keypadAddress);
   if (key != 0) {
-    Serial.println("[KEYPAD] WARNING: release all keys before testing");
+      Serial.println("[KEYPAD] WARNING: release all keys before use");
   }
   return true;
 }
@@ -237,4 +233,4 @@ bool getKey(char &key) {
   return true;
 }
 
-}  // namespace KeypadDevice
+}

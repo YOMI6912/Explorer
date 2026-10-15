@@ -3,10 +3,11 @@
 
 namespace HeightLink {
 constexpr uint32_t MAGIC = 0x31474848;
-// V2 is the C3 head-plate/12x12 calibrated profile, not wall diagnostics.
+
 constexpr uint8_t VERSION = 2;
 constexpr uint8_t REQUEST = 1;
 constexpr uint8_t RESPONSE = 2;
+constexpr uint8_t HEARTBEAT = 3;
 enum Status : uint8_t {
   OK = 0,
   SENSOR_OFFLINE = 1,
@@ -40,4 +41,4 @@ struct __attribute__((packed)) Response {
 };
 static_assert(sizeof(Request) == 12, "Request wire layout changed");
 static_assert(sizeof(Response) == 30, "Response wire layout changed");
-}  // namespace HeightLink
+}

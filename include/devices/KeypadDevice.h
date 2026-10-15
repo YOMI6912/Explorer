@@ -9,5 +9,5 @@ void update();
 bool isReady();
 bool getKey(char &key);
 
-}  // namespace KeypadDevice
+}
 

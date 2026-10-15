@@ -27,8 +27,8 @@ enum class State : uint8_t {
 };
 
 WiFiClientSecure networkClient;
-MQTTClient mqtt(Config::QueueASerialTest::MQTT_READ_BUFFER_SIZE,
-                Config::QueueASerialTest::MQTT_WRITE_BUFFER_SIZE);
+MQTTClient mqtt(Config::Runtime::MQTT_READ_BUFFER_SIZE,
+                Config::Runtime::MQTT_WRITE_BUFFER_SIZE);
 Preferences preferences;
 bool preferencesReady = false;
 bool clinicStaDeferredForHeight = false;
@@ -52,10 +52,6 @@ struct PendingMeasurement {
 };
 
 PendingMeasurement pendingMeasurement;
-
-bool dropNextMeasurementAckForTest = false;
-bool waitingForDuplicateAckTest = false;
-String firstAckQueueNumberForTest;
 
 constexpr size_t PRINT_HISTORY_SIZE = 16;
 struct PrintHistoryEntry {
@@ -92,7 +88,7 @@ uint32_t lastWifiAttemptAt = 0;
 uint32_t lastMqttAttemptAt = 0;
 uint32_t lastClockWaitLogAt = 0;
 bool wifiWasConnected = false;
-bool clockStarted = false;
+uint32_t lastClockAttemptAt = 0;
 uint32_t lcdReturnToReadyAt = 0;
 bool loadCellHardwareReady = true;
 bool heightSensorHardwareReady = true;
@@ -119,8 +115,7 @@ void showReadyScreen() {
 }
 
 void showOtpScreen() {
-  // Show the digits while entering OTP so the operator can verify each key.
-  // The actual buffer/payload is unchanged and is still sent only after '#'.
+
   String enteredOtp = "OTP: " + otpBuffer;
   LcdDevice::showScreen("ONLINE QUEUE A", enteredOtp,
                         "ENTER 6 DIGITS", "#OK C:DEL D:CANCEL");
@@ -168,7 +163,7 @@ const char *backendErrorThai(const String &errorCode) {
 String responseErrorCode(JsonDocument &response) {
   String errorCode = response["error_code"] | "";
   if (errorCode.isEmpty()) {
-    // รองรับ Backend รุ่นเก่าที่เคยใช้ชื่อ field ว่า code
+
     errorCode = String(response["code"] | "");
   }
   return errorCode;
@@ -187,13 +182,13 @@ String pendingMeasurementMode() {
 }
 
 uint32_t measurementRetryDelayMs() {
-  uint64_t delayMs = Config::QueueASerialTest::MEASUREMENT_RETRY_MS;
+  uint64_t delayMs = Config::Runtime::MEASUREMENT_RETRY_MS;
   const uint8_t shifts = pendingMeasurement.retryCount < 3
                              ? pendingMeasurement.retryCount
                              : 3;
   delayMs <<= shifts;
-  if (delayMs > Config::QueueASerialTest::MEASUREMENT_RETRY_MAX_MS) {
-    delayMs = Config::QueueASerialTest::MEASUREMENT_RETRY_MAX_MS;
+  if (delayMs > Config::Runtime::MEASUREMENT_RETRY_MAX_MS) {
+    delayMs = Config::Runtime::MEASUREMENT_RETRY_MAX_MS;
   }
   return static_cast<uint32_t>(delayMs);
 }
@@ -228,7 +223,7 @@ void markPrintJobReceived(const String &messageId) {
 }
 
 bool isSixDigitOtp(const String &value) {
-  if (value.length() != Config::QueueASerialTest::OTP_LENGTH) {
+  if (value.length() != Config::Runtime::OTP_LENGTH) {
     return false;
   }
 
@@ -273,11 +268,12 @@ bool clockIsReady() {
 }
 
 void startClock() {
-  if (clockStarted) {
+  if (clockIsReady()) {
     return;
   }
-  clockStarted = true;
-  configTime(0, 0, Config::Time::NTP_SERVER_1, Config::Time::NTP_SERVER_2);
+  lastClockAttemptAt = millis();
+  configTime(0, 0, Config::Time::NTP_SERVER_1,
+             Config::Time::NTP_SERVER_2, "time.cloudflare.com");
   Serial.println("[เวลา] เริ่มตั้งเวลาผ่าน NTP แล้ว");
 }
 
@@ -304,7 +300,6 @@ uint8_t daysInMonth(int year, int month) {
   return DAYS[month - 1];
 }
 
-// แปลงวันที่ Gregorian เป็นจำนวนวันนับจาก 1970-01-01 โดยไม่พึ่ง timezone
 int64_t daysFromCivil(int year, unsigned month, unsigned day) {
   year -= month <= 2;
   const int era = (year >= 0 ? year : year - 399) / 400;
@@ -522,32 +517,6 @@ void beginPersistence() {
   }
 }
 
-void printHelp() {
-  Serial.println();
-  Serial.println("========== ทดสอบคิวคลินิกผ่าน Serial ==========");
-  Serial.println("A 123456             : ส่ง OTP จริงไปตรวจสอบ");
-  Serial.println("M 60 170              : ส่งน้ำหนักและส่วนสูงจำลองหลัง OTP ผ่าน");
-  Serial.println("วัด 60 170            : เหมือนคำสั่ง M 60 170");
-  Serial.println("T 123456 60 170       : ตรวจ OTP และส่งค่าวัดอัตโนมัติ");
-  Serial.println("ทดสอบ 123456 60 170   : เหมือนคำสั่ง T");
-  Serial.println("W 60 170              : ส่งค่าวัด Walk-in คิว B โดยไม่ใช้ OTP");
-  if (Config::Features::ENABLE_WALKIN_RETRY_TEST) {
-    Serial.println("WRETRY 66 174         : จำลอง ACK หาย แล้วตรวจ duplicate ด้วย message_id เดิม");
-  }
-  if (Config::Features::ENABLE_ONLINE_RETRY_TEST) {
-    Serial.println("ARETRY 123456 60 170  : คิว A จำลอง ACK หายด้วย OTP จริง");
-  }
-  Serial.println("A123456#              : จำลองการกด Keypad ครบขั้นตอน OTP");
-  Serial.println("B                     : วัดจริง; ตอนว่าง=Walk-in, หลัง OTP=คิว A");
-  Serial.println("C                     : ลบเลข OTP ตัวล่าสุด");
-  Serial.println("D หรือ *              : ยกเลิกและกลับหน้าเริ่มต้น");
-  Serial.println("PRINTTEST/พิมพ์ทดสอบ   : ทดสอบเครื่องพิมพ์ USB โดยตรง");
-  Serial.println("สถานะ                  : ดู Wi-Fi, MQTT และสถานะคิว A");
-  Serial.println("ช่วยเหลือ หรือ ?       : แสดงรายการคำสั่งนี้");
-  Serial.println("หมายเหตุ: เปลี่ยน 123456 เป็น OTP จริงจาก Test Patient Tool");
-  Serial.println("============================================");
-  Serial.println();
-}
 
 void clearLocalFlow() {
   state = State::Idle;
@@ -606,7 +575,7 @@ bool publishPayload(const String &topic, const String &payload) {
   const bool published = mqtt.publish(topic,
                                       payload,
                                       false,
-                                      Config::QueueASerialTest::MQTT_QOS);
+                                      Config::Runtime::MQTT_QOS);
   if (!published) {
     Serial.println("สถานะ    : ส่งไม่สำเร็จ");
   } else if (topic.endsWith("/otp-verify")) {
@@ -642,7 +611,7 @@ bool publishPendingMeasurement(bool retrying) {
   }
   const bool published = publishPayload(pendingMeasurement.topic,
                                         pendingMeasurement.payload);
-  // หน่วงก่อนลองใหม่แม้ publish ล้มเหลว เพื่อไม่ยิงซ้ำทุก loop
+
   pendingMeasurement.lastSentAt = millis();
   return published;
 }
@@ -729,6 +698,7 @@ bool publishOnlineMeasurement(float weightKg, float heightCm) {
     return false;
   }
   if (!clockIsReady()) {
+    if (millis() - lastClockAttemptAt >= 30000UL) startClock();
     Serial.println("[เวลา] NTP ยังไม่พร้อม กรุณารอสักครู่แล้วส่งคำสั่ง วัด อีกครั้ง");
     return false;
   }
@@ -743,7 +713,6 @@ bool publishOnlineMeasurement(float weightKg, float heightCm) {
   measurement["weight"] = weightKg;
   measurement["height"] = heightCm;
 
-  // Firmware ส่งเฉพาะ W/H และไม่คำนวณ/ส่ง BMI
   if (!queueMeasurement(measurement)) {
     return false;
   }
@@ -803,7 +772,6 @@ void queuePrintAck(const String &printJobId,
   }
 }
 
-// รับ printJobId แบบ copy เพราะ activePrintJobId จะถูกล้างก่อนสร้าง ACK
 void finishPrintJob(String printJobId,
                      const char *status,
                      const char *errorCode = "") {
@@ -891,7 +859,6 @@ void handlePrintJob(JsonDocument &document) {
                         "PRINTING TICKET...",
                         "PLEASE WAIT", "DO NOT TURN OFF");
 
-  // บันทึกก่อนส่งเข้าเครื่องพิมพ์เพื่อป้องกันพิมพ์ซ้ำหากไฟดับระหว่าง transfer
   rememberPrintJob(printJobId, "failed", "PRINT_INTERRUPTED");
 
   if (!Config::Features::ENABLE_USB_PRINTER || !UsbPrinter::isReady()) {
@@ -949,8 +916,6 @@ void onMqttMessage(String &topic, String &payload) {
       measurementSessionId = String(response["measurement_session_id"] | "");
       if (measurementSessionId.isEmpty()) {
         Serial.println("[OTP] Backend ยืนยัน OTP แต่ไม่ได้ส่ง measurement_session_id");
-        dropNextMeasurementAckForTest = false;
-        waitingForDuplicateAckTest = false;
         clearLocalFlow();
         return;
       }
@@ -964,8 +929,6 @@ void onMqttMessage(String &topic, String &payload) {
         Serial.println("[OTP] คำเตือน: อ่าน expires_at ไม่สำเร็จ จะให้ Backend ตรวจอายุ Session");
       } else if (time(nullptr) >= measurementSessionExpiresEpoch) {
         Serial.println("[OTP] Backend ส่ง Session ที่หมดอายุแล้ว กรุณาขอ OTP ใหม่");
-        dropNextMeasurementAckForTest = false;
-        waitingForDuplicateAckTest = false;
         clearLocalFlow();
         return;
       } else {
@@ -977,8 +940,6 @@ void onMqttMessage(String &topic, String &payload) {
       if (!expectedOnlineQueueNumber.isEmpty() &&
           expectedOnlineQueueNumber.charAt(0) != 'A') {
         Serial.println("[OTP] Backend ส่ง queue_number ที่ไม่ใช่คิว A จึงยกเลิก Session");
-        dropNextMeasurementAckForTest = false;
-        waitingForDuplicateAckTest = false;
         clearLocalFlow();
         return;
       }
@@ -1013,8 +974,6 @@ void onMqttMessage(String &topic, String &payload) {
       Serial.println("[OTP] ไม่ผ่าน: " + errorCode +
                      " (" + backendErrorThai(errorCode) + ")");
       Serial.println("[คิว A] ไม่มีการส่งค่าวัดและไม่มีการขอพิมพ์บัตร");
-      dropNextMeasurementAckForTest = false;
-      waitingForDuplicateAckTest = false;
       clearLocalFlow();
       showTemporaryScreen("OTP REJECTED", errorCode,
                           "PRESS A TO RETRY", "OR B FOR WALK-IN");
@@ -1069,30 +1028,6 @@ void onMqttMessage(String &topic, String &payload) {
         return;
       }
 
-      if (dropNextMeasurementAckForTest) {
-        dropNextMeasurementAckForTest = false;
-        waitingForDuplicateAckTest = true;
-        firstAckQueueNumberForTest = queueNumber;
-        Serial.printf("[ทดสอบ Retry] จำลอง ACK สูญหาย: ข้าม status=%s ของคิว %s หนึ่งครั้ง\n",
-                      status.c_str(),
-                      queueNumber.c_str());
-        Serial.println("[ทดสอบ Retry] เก็บ Pending ไว้ รอส่ง message_id เดิมซ้ำภายใน 10 วินาที");
-        return;
-      }
-
-      if (waitingForDuplicateAckTest) {
-        if (status == "duplicate" && queueNumber == firstAckQueueNumberForTest) {
-          Serial.println("[ทดสอบ Retry] ผ่าน: Backend ตอบ duplicate พร้อม queue_number เดิม");
-        } else {
-          Serial.printf("[ทดสอบ Retry] ไม่ผ่าน: คาด duplicate/%s แต่ได้ %s/%s\n",
-                        firstAckQueueNumberForTest.c_str(),
-                        status.c_str(),
-                        queueNumber.c_str());
-        }
-        waitingForDuplicateAckTest = false;
-        firstAckQueueNumberForTest = "";
-      }
-
       Serial.println("[ACK] Backend บันทึกค่าวัดสำเร็จ");
       Serial.println("[ACK] สถานะ: " + status);
       Serial.println("[ACK] หมายเลขคิว: " + queueNumber);
@@ -1123,9 +1058,6 @@ void onMqttMessage(String &topic, String &payload) {
       }
       Serial.println("[ACK] Backend ปฏิเสธค่าวัด: " + errorCode +
                      " (" + backendErrorThai(errorCode) + ")");
-      dropNextMeasurementAckForTest = false;
-      waitingForDuplicateAckTest = false;
-      firstAckQueueNumberForTest = "";
       clearPendingMeasurement();
       clearLocalFlow();
       showTemporaryScreen("MEASURE REJECTED", errorCode,
@@ -1209,10 +1141,15 @@ const char *wifiStatusText(wl_status_t status) {
 
 void startWifi() {
   lastWifiAttemptAt = millis();
+  if (Config::Features::REMOTE_HEIGHT_ENABLED &&
+      !RemoteHeightLink::clinicStationStarted()) {
+    clinicStaDeferredForHeight = true;
+    Serial.println("[Wi-Fi] defer clinic STA until private C3 link is available");
+    return;
+  }
   Serial.printf("[Wi-Fi] กำลังเชื่อมต่อเครือข่าย %s...\n",
                 Config::Network::WIFI_SSID);
-  // AP+STA is safe when both interfaces use the clinic AP's fixed channel.
-  // The private C3 AP is started first on that same channel.
+
   WiFi.mode(Config::Features::REMOTE_HEIGHT_ENABLED ? WIFI_AP_STA : WIFI_STA);
   WiFi.setAutoReconnect(!Config::Features::REMOTE_HEIGHT_ENABLED);
   WiFi.setSleep(false);
@@ -1221,6 +1158,12 @@ void startWifi() {
 
 void retryWifi() {
   lastWifiAttemptAt = millis();
+  if (Config::Features::REMOTE_HEIGHT_ENABLED &&
+      !RemoteHeightLink::clinicStationStarted()) {
+    RemoteHeightLink::enableClinicStation();
+    clinicStaDeferredForHeight = false;
+    return;
+  }
   const wl_status_t status = WiFi.status();
   Serial.printf("[Wi-Fi] ยังไม่เชื่อมต่อ: %s (%d), กำลัง reconnect...\n",
                 wifiStatusText(status),
@@ -1256,11 +1199,11 @@ void connectMqtt() {
   }
 
   const bool otpSubscribed = mqtt.subscribe(
-      baseTopic + "/otp-result", Config::QueueASerialTest::MQTT_QOS);
+      baseTopic + "/otp-result", Config::Runtime::MQTT_QOS);
   const bool measurementSubscribed = mqtt.subscribe(
-      baseTopic + "/measurement-ack", Config::QueueASerialTest::MQTT_QOS);
+      baseTopic + "/measurement-ack", Config::Runtime::MQTT_QOS);
   const bool printSubscribed = mqtt.subscribe(
-      baseTopic + "/print", Config::QueueASerialTest::MQTT_QOS);
+      baseTopic + "/print", Config::Runtime::MQTT_QOS);
   if (!otpSubscribed || !measurementSubscribed || !printSubscribed) {
     Serial.println("[MQTT] เชื่อมต่อแล้ว แต่ Subscribe บาง Topic ไม่สำเร็จ");
     mqtt.disconnect();
@@ -1288,20 +1231,19 @@ void updateConnections() {
   }
 
   if (!wifiConnected) {
-    // Retry the clinic STA slowly; the private AP uses the same fixed channel
-    // so a retry does not create a permanent channel mismatch for C3.
+
     const uint32_t retryInterval =
         Config::Features::REMOTE_HEIGHT_ENABLED
-            ? 60000UL
-            : Config::QueueASerialTest::WIFI_RETRY_MS;
+            ? 30000UL
+            : Config::Runtime::WIFI_RETRY_MS;
     if (now - lastWifiAttemptAt >= retryInterval) {
       retryWifi();
     }
     return;
   }
 
-  // TLS ตรวจวันหมดอายุ certificate จึงต้องมีเวลาจริงจาก NTP ก่อน handshake
   if (!clockIsReady()) {
+    if (now - lastClockAttemptAt >= 30000UL) startClock();
     if (now - lastClockWaitLogAt >= 5000) {
       lastClockWaitLogAt = now;
       Serial.println("[เวลา] กำลังรอ NTP ก่อนเชื่อม MQTT/TLS...");
@@ -1310,7 +1252,7 @@ void updateConnections() {
   }
 
   if (!mqtt.connected() &&
-      now - lastMqttAttemptAt >= Config::QueueASerialTest::MQTT_RETRY_MS) {
+      now - lastMqttAttemptAt >= Config::Runtime::MQTT_RETRY_MS) {
     connectMqtt();
   }
 }
@@ -1353,14 +1295,11 @@ bool startAutomaticOnline(const String &otp,
   }
   return true;
 }
-}  // namespace
+}
 
 void begin() {
   clearLocalFlow();
   pendingMeasurement = PendingMeasurement{};
-  dropNextMeasurementAckForTest = false;
-  waitingForDuplicateAckTest = false;
-  firstAckQueueNumberForTest = "";
   printHistoryCount = 0;
   pendingPrintAck = false;
   pendingPrintJobId = "";
@@ -1376,17 +1315,14 @@ void begin() {
   beginPersistence();
   networkClient.setCACert(EMQX_CA_CERT);
   networkClient.setHandshakeTimeout(
-      Config::QueueASerialTest::TLS_HANDSHAKE_TIMEOUT_SECONDS);
+      Config::Runtime::TLS_HANDSHAKE_TIMEOUT_SECONDS);
   mqtt.begin(Config::MQTT::BROKER, Config::MQTT::PORT, networkClient);
   mqtt.onMessage(onMqttMessage);
-  mqtt.setKeepAlive(Config::QueueASerialTest::MQTT_KEEP_ALIVE_SECONDS);
-  mqtt.setTimeout(Config::QueueASerialTest::MQTT_TIMEOUT_MS);
+  mqtt.setKeepAlive(Config::Runtime::MQTT_KEEP_ALIVE_SECONDS);
+  mqtt.setTimeout(Config::Runtime::MQTT_TIMEOUT_MS);
   mqtt.setCleanSession(true);
 
-  printHelp();
-  // Allow the S3 to join the clinic hotspot while its private height AP is
-  // running. Both interfaces share one radio, so the hotspot should be 2.4
-  // GHz; C3 may reconnect once when the shared channel is selected.
+
   clinicStaDeferredForHeight = false;
   startWifi();
   showReadyScreen();
@@ -1439,7 +1375,7 @@ void handleKey(char key) {
   }
 
   if (key >= '0' && key <= '9') {
-    if (otpBuffer.length() >= Config::QueueASerialTest::OTP_LENGTH) {
+    if (otpBuffer.length() >= Config::Runtime::OTP_LENGTH) {
       Serial.println("[คิว A] OTP ครบ 6 หลักแล้ว กรุณากด # เพื่อยืนยัน");
       return;
     }
@@ -1447,7 +1383,7 @@ void handleKey(char key) {
     showOtpScreen();
     Serial.printf("[คิว A] กรอก OTP แล้ว %u/%u หลัก\n",
                   static_cast<unsigned int>(otpBuffer.length()),
-                  Config::QueueASerialTest::OTP_LENGTH);
+                  Config::Runtime::OTP_LENGTH);
     return;
   }
 
@@ -1458,7 +1394,7 @@ void handleKey(char key) {
     showOtpScreen();
     Serial.printf("[คิว A] ลบตัวล่าสุดแล้ว เหลือ %u/%u หลัก\n",
                   static_cast<unsigned int>(otpBuffer.length()),
-                  Config::QueueASerialTest::OTP_LENGTH);
+                  Config::Runtime::OTP_LENGTH);
     return;
   }
 
@@ -1476,215 +1412,6 @@ void handleKey(char key) {
   Serial.printf("[คิว A] ไม่รองรับปุ่ม '%c'\n", key);
 }
 
-void handleSerialLine(const String &inputLine) {
-  String line = inputLine;
-  line.trim();
-  if (line.isEmpty()) {
-    return;
-  }
-
-  String upper = line;
-  upper.toUpperCase();
-
-  if (upper == "HELP" || upper == "H" || upper == "?" ||
-      line == "ช่วยเหลือ") {
-    printHelp();
-    return;
-  }
-  if (upper == "STATUS" || upper == "S" || line == "สถานะ") {
-    printStatus();
-    return;
-  }
-  if (upper == "CANCEL" || line == "ยกเลิก") {
-    cancelLocalFlow();
-    return;
-  }
-  if (upper == "PRINTTEST" || upper == "PRINT TEST" ||
-      line == "พิมพ์ทดสอบ") {
-    if (!Config::Features::ENABLE_USB_PRINTER) {
-      Serial.println("[พิมพ์] โหมดนี้ปิดเครื่องพิมพ์ USB ไว้ กรุณาเลือกโหมดอุปกรณ์จริง");
-    } else if (!UsbPrinter::isReady()) {
-      Serial.println("[พิมพ์] ยังไม่พบเครื่องพิมพ์ กรุณาตรวจไฟเลี้ยงและสาย USB OTG/Host");
-    } else if (UsbPrinter::isBusy()) {
-      Serial.println("[พิมพ์] เครื่องพิมพ์กำลังทำงาน กรุณารอสักครู่");
-    } else if (UsbPrinter::printTest()) {
-      Serial.println("[พิมพ์] ส่งกระดาษทดสอบเข้าเครื่องพิมพ์แล้ว");
-    } else {
-      Serial.println("[พิมพ์] ส่งกระดาษทดสอบไม่สำเร็จ");
-    }
-    return;
-  }
-
-  if (upper.startsWith("WRETRY ")) {
-    if (!Config::Features::ENABLE_WALKIN_RETRY_TEST) {
-      Serial.println("[ทดสอบ Retry] คำสั่งนี้ใช้ได้เฉพาะ Environment esp32-s3-walkin-retry-test");
-      return;
-    }
-
-    float weightKg = 0.0f;
-    float heightCm = 0.0f;
-    if (!parseMeasurementPair(line.substring(7), weightKg, heightCm)) {
-      Serial.println("[ข้อมูลเข้า] รูปแบบ: WRETRY น้ำหนัก ส่วนสูง");
-      Serial.println("[ตัวอย่าง] WRETRY 66 174");
-      return;
-    }
-
-    dropNextMeasurementAckForTest = true;
-    waitingForDuplicateAckTest = false;
-    firstAckQueueNumberForTest = "";
-    if (!publishWalkInMeasurement(weightKg, heightCm)) {
-      dropNextMeasurementAckForTest = false;
-    } else {
-      Serial.println("[ทดสอบ Retry] เปิดการจำลอง ACK สูญหายสำหรับรายการนี้");
-    }
-    return;
-  }
-
-  if (upper.startsWith("ARETRY ")) {
-    if (!Config::Features::ENABLE_ONLINE_RETRY_TEST) {
-      Serial.println("[ทดสอบ Retry] คำสั่งนี้ใช้ได้เฉพาะ Environment esp32-s3-online-retry-test");
-      return;
-    }
-
-    String values = line.substring(7);
-    values.replace(',', ' ');
-    char otp[16] = {};
-    float weightKg = 0.0f;
-    float heightCm = 0.0f;
-    if (sscanf(values.c_str(), "%15s %f %f", otp, &weightKg, &heightCm) != 3 ||
-        !isSixDigitOtp(String(otp)) ||
-        !measurementIsValid(weightKg, heightCm)) {
-      Serial.println("[ข้อมูลเข้า] รูปแบบ: ARETRY OTP น้ำหนัก ส่วนสูง");
-      Serial.println("[ตัวอย่าง] ARETRY 123456 60 170");
-      return;
-    }
-
-    dropNextMeasurementAckForTest = true;
-    waitingForDuplicateAckTest = false;
-    firstAckQueueNumberForTest = "";
-    if (!startAutomaticOnline(String(otp), weightKg, heightCm)) {
-      dropNextMeasurementAckForTest = false;
-    } else {
-      Serial.println("[ทดสอบ Retry] คิว A จะจำลอง measurement ACK สูญหายหนึ่งครั้ง");
-    }
-    return;
-  }
-
-  const String thaiTestPrefix = "ทดสอบ ";
-  if (upper.startsWith("T ") || upper.startsWith("TEST ") ||
-      line.startsWith(thaiTestPrefix)) {
-    String values;
-    if (line.startsWith(thaiTestPrefix)) {
-      values = line.substring(thaiTestPrefix.length());
-    } else {
-      values = upper.startsWith("TEST ") ? line.substring(5)
-                                          : line.substring(1);
-    }
-    values.replace(',', ' ');
-    char otp[16] = {};
-    float weightKg = 0.0f;
-    float heightCm = 0.0f;
-    if (sscanf(values.c_str(), "%15s %f %f", otp, &weightKg, &heightCm) != 3) {
-      Serial.println("[ข้อมูลเข้า] รูปแบบ: ทดสอบ OTP น้ำหนัก ส่วนสูง");
-      Serial.println("[ตัวอย่าง] ทดสอบ 123456 60 170");
-      return;
-    }
-    startAutomaticOnline(String(otp), weightKg, heightCm);
-    return;
-  }
-
-  const String thaiWalkInPrefix = "คิวบี ";
-  if (upper.startsWith("W ") || upper.startsWith("WALKIN ") ||
-      upper.startsWith("WALK-IN ") || line.startsWith(thaiWalkInPrefix)) {
-    const int separator = line.indexOf(' ');
-    float weightKg = 0.0f;
-    float heightCm = 0.0f;
-    if (separator < 0 ||
-        !parseMeasurementPair(line.substring(separator + 1),
-                              weightKg,
-                              heightCm)) {
-      Serial.println("[ข้อมูลเข้า] รูปแบบ: W น้ำหนัก ส่วนสูง");
-      Serial.println("[ตัวอย่าง] W 60 170");
-      return;
-    }
-    publishWalkInMeasurement(weightKg, heightCm);
-    return;
-  }
-
-  const String thaiQueuePrefix = "คิวเอ ";
-  if (upper.startsWith("A ") || upper.startsWith("OTP ") ||
-      line.startsWith(thaiQueuePrefix)) {
-    String otp;
-    if (line.startsWith(thaiQueuePrefix)) {
-      otp = line.substring(thaiQueuePrefix.length());
-    } else {
-      otp = upper.startsWith("OTP ") ? line.substring(4)
-                                      : line.substring(1);
-    }
-    otp.trim();
-    autoMeasurementAfterOtp = false;
-    if (!publishOtpVerify(otp)) {
-      Serial.println("[ข้อมูลเข้า] กรุณาใช้ OTP จริง 6 หลักจาก Test Patient Tool");
-    }
-    return;
-  }
-
-  const String thaiMeasurePrefix = "วัด ";
-  if (upper.startsWith("M ") || line.startsWith(thaiMeasurePrefix)) {
-    float weightKg = 0.0f;
-    float heightCm = 0.0f;
-    const String values = line.startsWith(thaiMeasurePrefix)
-                              ? line.substring(thaiMeasurePrefix.length())
-                              : line.substring(1);
-    if (!parseMeasurementPair(values, weightKg, heightCm)) {
-      Serial.println("[ข้อมูลเข้า] รูปแบบ: วัด น้ำหนัก ส่วนสูง");
-      Serial.println("[ตัวอย่าง] วัด 60 170");
-      return;
-    }
-    publishOnlineMeasurement(weightKg, heightCm);
-    return;
-  }
-
-  // Easy Tool v3 also accepts a line without T: OTP WEIGHT HEIGHT
-  {
-    String values = line;
-    values.replace(',', ' ');
-    char otp[16] = {};
-    float weightKg = 0.0f;
-    float heightCm = 0.0f;
-    if (sscanf(values.c_str(), "%15s %f %f", otp, &weightKg, &heightCm) == 3 &&
-        isSixDigitOtp(String(otp))) {
-      startAutomaticOnline(String(otp), weightKg, heightCm);
-      return;
-    }
-  }
-
-  if (isSixDigitOtp(line)) {
-    autoMeasurementAfterOtp = false;
-    publishOtpVerify(line);
-    return;
-  }
-
-  // Keypad-style input can be pasted as one line: A123456#
-  bool keypadStyle = true;
-  for (size_t i = 0; i < upper.length(); ++i) {
-    const char key = upper.charAt(i);
-    if (!((key >= '0' && key <= '9') ||
-          key == 'A' || key == 'C' || key == 'D' ||
-          key == '#' || key == '*')) {
-      keypadStyle = false;
-      break;
-    }
-  }
-  if (keypadStyle) {
-    for (size_t i = 0; i < upper.length(); ++i) {
-      handleKey(upper.charAt(i));
-    }
-    return;
-  }
-
-  Serial.println("[Serial] ไม่รู้จักคำสั่ง กรุณาพิมพ์ ช่วยเหลือ");
-}
 
 void update() {
   updateConnections();
@@ -1694,10 +1421,8 @@ void update() {
 
   const uint32_t now = millis();
   if (state == State::WaitingOtpResult && otpRequestSentAt != 0 &&
-      now - otpRequestSentAt >= Config::QueueASerialTest::OTP_RESULT_TIMEOUT_MS) {
+      now - otpRequestSentAt >= Config::Runtime::OTP_RESULT_TIMEOUT_MS) {
     Serial.println("[OTP] รอผลเกินเวลา กรุณาขอ OTP ใหม่แล้วลองอีกครั้ง");
-    dropNextMeasurementAckForTest = false;
-    waitingForDuplicateAckTest = false;
     clearLocalFlow();
     showTemporaryScreen("OTP TIMEOUT", "PLEASE TRY AGAIN",
                         "PRESS A FOR ONLINE");
@@ -1715,8 +1440,6 @@ void update() {
     autoMeasurementAfterOtp = false;
     Serial.println("[อัตโนมัติ] ขั้นที่ 2/2 กำลังส่งน้ำหนักและส่วนสูงจำลอง");
     if (!publishOnlineMeasurement(pendingWeightKg, pendingHeightCm)) {
-      dropNextMeasurementAckForTest = false;
-      waitingForDuplicateAckTest = false;
       Serial.println("[อัตโนมัติ] ส่งค่าวัดไม่สำเร็จ กรุณาพิมพ์ วัด 60 170 เพื่อลองใหม่");
     }
   }
@@ -1726,11 +1449,11 @@ void update() {
 
   if (awaitingPrintJob && printJobWaitStartedAt != 0 &&
       now - printJobWaitStartedAt >=
-          Config::QueueASerialTest::PRINT_JOB_WAIT_TIMEOUT_MS) {
+          Config::Runtime::PRINT_JOB_WAIT_TIMEOUT_MS) {
     Serial.printf("[พิมพ์] คำเตือน: รอ /print ของคิว %s เกิน %lu วินาที กรุณาตรวจ Backend Print Outbox\n",
                   awaitingPrintQueueNumber.c_str(),
                   static_cast<unsigned long>(
-                      Config::QueueASerialTest::PRINT_JOB_WAIT_TIMEOUT_MS / 1000));
+                      Config::Runtime::PRINT_JOB_WAIT_TIMEOUT_MS / 1000));
     const String timedOutQueue = awaitingPrintQueueNumber;
     clearPrintJobWait();
     showTemporaryScreen("PRINT JOB TIMEOUT", "QUEUE: " + timedOutQueue,
@@ -1771,4 +1494,4 @@ bool submitWalkInMeasurement(float weightKg, float heightCm) {
   return publishWalkInMeasurement(weightKg, heightCm);
 }
 
-}  // namespace OnlineQueueWorkflow
+}

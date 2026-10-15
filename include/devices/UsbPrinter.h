@@ -23,6 +23,4 @@ bool printQueueTicket(const String &queueNumber,
                       float heightCm,
                       float bmi,
                       const String &measuredAt);
-bool printTest();
-
-} 
+}

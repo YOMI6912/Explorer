@@ -13,8 +13,7 @@
 
 namespace RemoteHeightLink {
 namespace {
-// Listen on both the clinic STA address and the local AP address. C3 can
-// reach the server through the clinic network without joining the S3 AP.
+
 WiFiServer heightServer(Config::RemoteHeight::TCP_PORT, 2);
 WiFiClient heightClient;
 WiFiUDP discoveryUdp;
@@ -29,6 +28,9 @@ volatile bool apStopped = false;
 volatile bool stationLeft = false;
 uint32_t lastApRestartAt = 0;
 uint32_t lastStatusLogAt = 0;
+uint32_t tcpWaitingSince = 0;
+bool initialChannelScanDone = false;
+bool clinicStaStarted = false;
 
 void onWiFiEvent(WiFiEvent_t event, WiFiEventInfo_t info) {
   if (event == ARDUINO_EVENT_WIFI_AP_STACONNECTED) {
@@ -43,6 +45,12 @@ void onWiFiEvent(WiFiEvent_t event, WiFiEventInfo_t info) {
   } else if (event == ARDUINO_EVENT_WIFI_AP_STOP) {
     apStopped = true;
     Serial.println("[REMOTE] S3 AP stopped; restart scheduled");
+  } else if (event == ARDUINO_EVENT_WIFI_AP_START) {
+
+    apStopped = false;
+  } else if (event == ARDUINO_EVENT_WIFI_STA_DISCONNECTED) {
+    Serial.printf("[REMOTE] Clinic STA disconnected reason=%u\n",
+                  static_cast<unsigned>(info.wifi_sta_disconnected.reason));
   }
 }
 
@@ -53,6 +61,7 @@ bool validate(const HeightLink::Response &reply, float &heightCm) {
       reply.span_mm > Config::RemoteHeight::MAX_SPAN_MM ||
       reply.raw_distance_mm < Config::RemoteHeight::MIN_RAW_MM ||
       reply.raw_distance_mm > Config::RemoteHeight::MAX_RAW_MM) return false;
+  // แปลงระยะที่แก้ไขแล้วเป็นส่วนสูง
   const float reportedHeight = Config::RemoteHeight::MOUNT_HEIGHT_CM -
                                reply.corrected_distance_mm / 10.0f;
   const float expectedHeight = 201.44257f -
@@ -67,10 +76,7 @@ void acceptClient() {
   if (!serverReady) return;
   WiFiClient candidate = heightServer.available();
   if (!candidate) {
-    // WiFiClient::operator bool() is the same as connected(), so using
-    // `heightClient && !heightClient.connected()` can never be true. Check the
-    // file descriptor instead, otherwise a closed client occupies the only
-    // stored slot forever and the C3 cannot reconnect.
+
     if (heightClient.fd() >= 0 && !heightClient.connected() &&
         heightClient.available() == 0) {
       Serial.println("[REMOTE] C3 TCP disconnected; waiting for reconnect");
@@ -96,7 +102,24 @@ void acceptClient() {
   Serial.printf("[REMOTE] C3 TCP connected from %s\n",
                 heightClient.remoteIP().toString().c_str());
 }
-}  // namespace
+
+void drainClientHeartbeat() {
+  if (!heightClient || !heightClient.connected()) return;
+  while (heightClient.available() > 0) {
+    heightClient.read();
+  }
+}
+
+struct ClinicResumeGuard {
+  bool active = false;
+  ~ClinicResumeGuard() {
+    if (active) {
+      WiFi.begin(Config::Network::WIFI_SSID, Config::Network::WIFI_PASSWORD);
+      Serial.println("[REMOTE] Height exchange finished; resuming clinic STA for MQTT/outbox");
+    }
+  }
+};
+}
 
 bool begin() {
   if (serverReady) return true;
@@ -104,39 +127,41 @@ bool begin() {
     WiFi.onEvent(onWiFiEvent);
     eventRegistered = true;
   }
-  // Bring up the private AP alone first. The clinic STA is enabled only after
-  // C3 associates, avoiding an AP+STA handshake race on the shared radio.
-  WiFi.mode(WIFI_AP);
+
+  uint8_t apChannel = Config::RemoteHeight::AP_CHANNEL;
+  if (WiFi.status() == WL_CONNECTED) {
+    apChannel = WiFi.channel();
+  } else if (!initialChannelScanDone) {
+    initialChannelScanDone = true;
+    WiFi.mode(WIFI_STA);
+    WiFi.setSleep(false);
+    const int count = WiFi.scanNetworks(false, true);
+    for (int i = 0; i < count; ++i) {
+      if (WiFi.SSID(i) == Config::Network::WIFI_SSID &&
+          WiFi.channel(i) > 0) {
+        apChannel = static_cast<uint8_t>(WiFi.channel(i));
+        Serial.printf("[REMOTE] Clinic hotspot found on channel %u; matching height AP\n",
+                      static_cast<unsigned>(apChannel));
+        break;
+      }
+    }
+    WiFi.scanDelete();
+  }
+
+  WiFi.mode(WIFI_AP_STA);
+  WiFi.setAutoReconnect(false);
   WiFi.setSleep(false);
-  // Clear the previous soft-AP security state before applying the matching
-  // WPA2 profile used by the C3 station.
-  WiFi.softAPdisconnect(true);
-  delay(100);
-  WiFi.mode(WIFI_AP);
+  WiFi.setTxPower(WIFI_POWER_8_5dBm);
+  esp_wifi_set_protocol(WIFI_IF_AP, WIFI_PROTOCOL_11B | WIFI_PROTOCOL_11G);
+  esp_wifi_set_protocol(WIFI_IF_STA, WIFI_PROTOCOL_11B | WIFI_PROTOCOL_11G);
   const IPAddress apAddress(192, 168, 4, 1);
   const IPAddress netmask(255, 255, 255, 0);
   if (!WiFi.softAPConfig(apAddress, apAddress, netmask) ||
       !WiFi.softAP(Config::RemoteHeight::AP_SSID,
                    Config::RemoteHeight::AP_PASSWORD,
-                   Config::RemoteHeight::AP_CHANNEL, false, 4)) {
+                   apChannel, false, 4)) {
     Serial.println("[REMOTE] Private height access point start failed");
     return false;
-  }
-  // Force the exact WPA2 profile after the Arduino helper so an older AP
-  // profile in NVS cannot leave a stale passphrase/auth mode active.
-  wifi_config_t apConfig = {};
-  if (esp_wifi_get_config(WIFI_IF_AP, &apConfig) == ESP_OK) {
-    apConfig.ap.authmode = WIFI_AUTH_WPA2_PSK;
-    apConfig.ap.pairwise_cipher = WIFI_CIPHER_TYPE_CCMP;
-    memset(apConfig.ap.password, 0, sizeof(apConfig.ap.password));
-    strncpy(reinterpret_cast<char *>(apConfig.ap.password),
-            Config::RemoteHeight::AP_PASSWORD,
-            sizeof(apConfig.ap.password) - 1);
-    if (esp_wifi_set_config(WIFI_IF_AP, &apConfig) != ESP_OK) {
-      Serial.println("[REMOTE] Direct WPA2 AP credential apply failed");
-      WiFi.softAPdisconnect(true);
-      return false;
-    }
   }
   heightServer.begin();
   if (!heightServer) {
@@ -151,6 +176,7 @@ bool begin() {
   if (nextRequestId == 0) nextRequestId = 1;
   serverReady = true;
   apStopped = false;
+  tcpWaitingSince = 0;
   Serial.printf("[REMOTE] HEIGHT-AP/TCP server ready SSID=%s IP=%s channel=%u AP_MAC=%s port=%u protocol=v%u\n",
                 Config::RemoteHeight::AP_SSID,
                 WiFi.softAPIP().toString().c_str(),
@@ -168,6 +194,20 @@ bool isConnected() {
 
 uint8_t stationCount() {
   return serverReady ? WiFi.softAPgetStationNum() : 0;
+}
+
+bool clinicStationStarted() { return clinicStaStarted; }
+
+void enableClinicStation() {
+  if (clinicStaStarted) return;
+  clinicStaStarted = true;
+
+  WiFi.enableSTA(true);
+
+  WiFi.setAutoReconnect(false);
+  WiFi.setSleep(false);
+  WiFi.begin(Config::Network::WIFI_SSID, Config::Network::WIFI_PASSWORD);
+  Serial.println("[REMOTE] Clinic STA enabled after private AP/TCP startup");
 }
 
 void update() {
@@ -200,7 +240,28 @@ void update() {
     }
   }
   acceptClient();
+  drainClientHeartbeat();
   const uint32_t now = millis();
+
+  if (WiFi.softAPgetStationNum() > 0 && !isConnected()) {
+    if (tcpWaitingSince == 0) tcpWaitingSince = now;
+    if (now - tcpWaitingSince >= 25000UL) {
+      tcpWaitingSince = now;
+      if (heightClient.fd() >= 0) heightClient.stop();
+
+      esp_wifi_deauth_sta(0);
+      Serial.println("[REMOTE] Private AP station without TCP; cleared for reassociation");
+      heightServer.end();
+      heightServer.begin();
+      heightServer.setNoDelay(true);
+      Serial.printf("[REMOTE] TCP listener reopened on port %u: %s\n",
+                    Config::RemoteHeight::TCP_PORT,
+                    heightServer ? "READY" : "FAILED");
+      if (!heightServer) serverReady = false;
+    }
+  } else {
+    tcpWaitingSince = 0;
+  }
   if (WiFi.status() == WL_CONNECTED) {
     if (now - lastBeaconAt >= 2000) {
       lastBeaconAt = now;
@@ -239,7 +300,37 @@ void update() {
 bool requestHeightCm(float &heightCm) {
   heightCm = 0.0f;
   if (!serverReady && !begin()) return false;
-  const uint32_t deadline = millis() + Config::RemoteHeight::CLIENT_WAIT_MS;
+  ClinicResumeGuard clinicResume;
+  uint32_t clientWaitMs = Config::RemoteHeight::CLIENT_WAIT_MS;
+
+  if (!isConnected() ||
+      (WiFi.status() == WL_CONNECTED && WiFi.channel() != Config::RemoteHeight::AP_CHANNEL)) {
+    clinicResume.active = clinicStaStarted;
+    WiFi.setAutoReconnect(false);
+    if (clinicStaStarted) {
+      WiFi.disconnect(false, false);
+      delay(200);
+    }
+    if (heightClient.fd() >= 0) heightClient.stop();
+    esp_wifi_deauth_sta(0);
+    if (!WiFi.softAP(Config::RemoteHeight::AP_SSID,
+                    Config::RemoteHeight::AP_PASSWORD,
+                    Config::RemoteHeight::AP_CHANNEL, false, 4)) {
+      Serial.println("[REMOTE] Private measurement AP recovery failed");
+      return false;
+    }
+    const esp_err_t channelResult = esp_wifi_set_channel(
+        Config::RemoteHeight::AP_CHANNEL, WIFI_SECOND_CHAN_NONE);
+    Serial.printf("[REMOTE] Recovering measurement TCP on channel %u; channel result=%d\n",
+                  Config::RemoteHeight::AP_CHANNEL, static_cast<int>(channelResult));
+    heightServer.end();
+    heightServer.begin();
+    heightServer.setNoDelay(true);
+    if (!heightServer || channelResult != ESP_OK) return false;
+    tcpWaitingSince = 0;
+    clientWaitMs = 35000UL;
+  }
+  const uint32_t deadline = millis() + clientWaitMs;
   while (!(heightClient && heightClient.connected()) &&
          static_cast<int32_t>(deadline - millis()) > 0) {
     acceptClient();
@@ -269,9 +360,7 @@ bool requestHeightCm(float &heightCm) {
   size_t received = 0;
   const uint32_t started = millis();
   while (millis() - started < Config::RemoteHeight::RESPONSE_TIMEOUT_MS) {
-    // Drain queued bytes before checking connected(). The ESP32 TCP stack can
-    // report the peer as closed while the complete final reply is still in the
-    // receive buffer.
+
     while (heightClient.available() > 0 && received < sizeof(bytes)) {
       const int value = heightClient.read();
       if (value >= 0) bytes[received++] = static_cast<uint8_t>(value);
@@ -312,4 +401,4 @@ bool requestHeightCm(float &heightCm) {
   heightClient.stop();
   return false;
 }
-}  // namespace RemoteHeightLink
+}

@@ -9,7 +9,7 @@ namespace HX711Device {
 namespace {
 HX711 scale;
 bool initialized = false;
-}  // namespace
+}
 
 bool begin() {
   Serial.println("[HX711] Initializing...");
@@ -46,13 +46,12 @@ bool readRaw(long &rawValue) {
   return true;
 }
 
+// อ่านหลายครั้งแล้วคัดเฉพาะค่าที่นิ่ง
 bool readWeightKg(float &weightKg) {
   if (!initialized) {
     return false;
   }
 
-  // A single ten-sample average can look plausible while a person is
-  // stepping off the platform. Keep individual samples so motion is visible.
   float samples[Config::LoadCell::STABLE_WEIGHT_SAMPLES];
   float sorted[Config::LoadCell::STABLE_WEIGHT_SAMPLES];
   for (uint8_t i = 0; i < Config::LoadCell::STABLE_WEIGHT_SAMPLES; ++i) {
@@ -114,4 +113,4 @@ bool tare(uint8_t samples) {
   return true;
 }
 
-}  // namespace HX711Device
+}

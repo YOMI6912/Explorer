@@ -54,13 +54,7 @@ bool rejectNoisyScan(uint16_t retryReads) {
       static_cast<unsigned>(Config::HeightSensor::I2C_RETRY_REJECT_PER_ROI));
   return true;
 }
-// Match the standalone VL53L1X sketch that returned stable distance readings.
-// 25 kHz lengthens each transaction and did not eliminate this unit's I2C errors.
-// The installed module/cabling produces corrupted range registers at 100 kHz
-// (15-64 m values and frequent requestFrom errors). A slower clock gives the
-// sensor enough margin on this separate Wire0 bus.
-// Long external wiring is more tolerant at 25 kHz than 50 kHz; keep the
-// slower clock for this diagnostic build while checking intermittent I2C.
+
 constexpr uint32_t HEIGHT_I2C_CLOCK_HZ = 25000;
 constexpr uint32_t HEIGHT_WIRE_TIMEOUT_MS = 80;
 constexpr uint32_t FALLBACK_TIMING_BUDGET_US = 100000;
@@ -69,28 +63,16 @@ constexpr uint8_t MAX_COMMUNICATION_FAILURES = 3;
 constexpr uint8_t STARTUP_SAMPLE_ATTEMPTS = 8;
 constexpr uint8_t MEASUREMENT_RECOVERY_ATTEMPTS = 1;
 constexpr uint32_t MAX_MEASUREMENT_MS = 4000;
-// Do not stop after the first five apparently-stable frames. In practice the
-// first cluster can be a forehead/shoulder return (for example 150--156 mm)
-// and the actual crown appears a few frames later (about 140--142 mm). Keep
-// collecting a larger cluster before selecting the nearest stable target.
+
 constexpr uint8_t EARLY_STABLE_SAMPLE_COUNT = 7;
 constexpr float EARLY_STABLE_MAX_SPAN_CM = 0.8f;
-// Dark hair / low-reflectance heads on this unit are sometimes reported as
-// SignalFail even though the range register still contains the head distance.
-// Only recover a SignalFail value inside the plausible head interval; this
-// prevents stale 500+ mm body/floor values from being accepted as a head.
+
 constexpr uint16_t SIGNAL_FAIL_HEAD_MIN_DISTANCE_MM = 120;
 constexpr uint16_t SIGNAL_FAIL_HEAD_MAX_DISTANCE_MM = 450;
 constexpr float SIGNAL_FAIL_MIN_MCPS = 0.05f;
-// If the bus dies after one clean head frame, retain it only when it is in
-// the plausible head-distance band for this 197.3 cm mount.  This covers
-// people roughly 145--190 cm tall while excluding the 500--800 mm torso/floor
-// returns seen in the failing logs. Keep a little margin for tall users near
-// the 190 cm end of the installation.
+
 constexpr uint16_t SINGLE_HEAD_MIN_DISTANCE_MM = 60;
 constexpr uint16_t SINGLE_HEAD_MAX_DISTANCE_MM = 550;
-constexpr uint16_t DIAGNOSTIC_MAX_DISTANCE_MM = 700;
-bool extendedDistanceRangeActive = false;
 constexpr float SINGLE_HEAD_MIN_MCPS = 6.0f;
 
 bool isRecoverableHeadStatus(VL53L1X::RangeStatus status,
@@ -107,11 +89,8 @@ bool recoveryResetPending = false;
 VL53L1X::DistanceMode activeDistanceMode = VL53L1X::Long;
 uint32_t activeTimingBudgetUs = Config::HeightSensor::TIMING_BUDGET_US;
 
-// XSHUT is the only reliable recovery when the sensor no longer ACKs 0x29.
-// Reset only the VL53L1X; the ESP32, LCD, network and printer stay running.
 void resetSensorViaXshut() {
-  // This breakout does not release XSHUT reliably from an open-drain GPIO,
-  // so drive the 3.3 V logic level explicitly from the ESP32.
+
   digitalWrite(Config::Pins::HEIGHT_XSHUT, LOW);
   pinMode(Config::Pins::HEIGHT_XSHUT, OUTPUT);
   delay(50);
@@ -122,9 +101,6 @@ void resetSensorViaXshut() {
                 Config::Pins::HEIGHT_XSHUT);
 }
 
-// Recover a slave that left SDA low after a partial/aborted transaction.
-// This is the only reset available when XSHUT is not wired.  It is harmless
-// when the bus is already idle and avoids requiring a hardware modification.
 void recoverI2CBus() {
   const uint8_t sda = Config::Pins::HEIGHT_I2C_SDA;
   const uint8_t scl = Config::Pins::HEIGHT_I2C_SCL;
@@ -134,7 +110,7 @@ void recoverI2CBus() {
   delayMicroseconds(10);
 
   pinMode(scl, OUTPUT_OPEN_DRAIN);
-  digitalWrite(scl, HIGH);  // release SCL
+  digitalWrite(scl, HIGH);
   for (uint8_t pulse = 0; pulse < 9; ++pulse) {
     digitalWrite(scl, LOW);
     delayMicroseconds(8);
@@ -142,7 +118,6 @@ void recoverI2CBus() {
     delayMicroseconds(8);
   }
 
-  // Generate an I2C STOP: SDA low -> SCL high -> SDA high.
   pinMode(sda, OUTPUT_OPEN_DRAIN);
   digitalWrite(sda, LOW);
   delayMicroseconds(8);
@@ -175,9 +150,7 @@ bool setRoiAndDiscard(uint8_t width, uint8_t height) {
   if (!initialized && !begin()) {
     return false;
   }
-  // A repeated scan can reuse the configured ROI. In single-shot mode there
-  // is no continuous stream to stop; changing the ROI is followed by two
-  // fresh shots so the first frame after the register write is discarded.
+
   if (currentRoiWidth == width && currentRoiHeight == height) {
     return true;
   }
@@ -229,17 +202,13 @@ bool setRoiAndDiscard(uint8_t width, uint8_t height) {
   }
   return true;
 }
-}  // namespace
+}
 
 bool begin() {
   Serial.println("[VL53L1X] Initializing...");
   hasLastFrameStreamCount = false;
   lastReadWasDuplicateFrame = false;
-  // VL53L1X owns Wire0 exclusively; LCD is isolated on Wire1.
-  // Fully reset Wire0 before assigning its pins. This is the important part
-  // of the standalone pin-mapping scanner that reliably finds 0x29. Without
-  // end(), an earlier failed init/retry can leave the ESP32 I2C controller
-  // attached to stale pins and every later probe returns NACK.
+
   initialized = false;
   heightWire.end();
   delay(20);
@@ -251,9 +220,7 @@ bool begin() {
     Serial.println("[VL53L1X] ERROR: Wire0 begin failed");
     return false;
   }
-  // Keep the bus timeout short so a failed I2C packet cannot consume most of
-  // the eight-second measurement window. The sensor's separate ranging
-  // timeout remains 500 ms for a new optical result.
+
   heightWire.setClock(HEIGHT_I2C_CLOCK_HZ);
   heightWire.setTimeOut(HEIGHT_WIRE_TIMEOUT_MS);
   sensor.setBus(&heightWire);
@@ -263,19 +230,11 @@ bool begin() {
                 static_cast<unsigned long>(HEIGHT_I2C_CLOCK_HZ));
   sensor.setTimeout(Config::HeightSensor::TIMEOUT_MS);
 
-  // setup() already waits for board power-up. Keep retries short so network
-  // and keypad processing are not blocked when the sensor is disconnected.
   delay(100);
 
-  // Keep this sequence identical to the standalone sketch that is known to
-  // work on this module: set timeout, then call init directly on Wire0.
-  // Guard the library: on a disconnected/stuck bus its init path can divide
-  // by a zero oscillator value and panic the ESP32 instead of returning false.
   heightWire.beginTransmission(0x29);
   uint8_t ackStatus = heightWire.endTransmission();
-  // Probe a few times before declaring the module offline.  This handles the
-  // short boot window seen when the separate 3.3 V rail rises more slowly than
-  // the ESP32.
+
   for (uint8_t probe = 0; ackStatus != 0 && probe < 3; ++probe) {
     heightWire.end();
     recoverI2CBus();
@@ -297,8 +256,6 @@ bool begin() {
     return false;
   }
 
-  // Clear a timeout latched by the previous ranging session before starting
-  // a fresh one.
   sensor.timeoutOccurred();
 
   if (!sensor.init()) {
@@ -312,10 +269,6 @@ bool begin() {
     return false;
   }
 
-  // This module has produced the stable head returns in Long mode (roughly
-  // 150-220 mm for the installed mount). Short mode on this clone often
-  // saturates at 64 m / wrap values and loses the head completely, so use the
-  // proven Long profile and reject only the out-of-window ranges below.
   const bool modeReady = sensor.setDistanceMode(activeDistanceMode);
   sensor.setROISize(Config::HeightSensor::ROI_WIDTH,
                     Config::HeightSensor::ROI_HEIGHT);
@@ -338,9 +291,6 @@ bool begin() {
                 Config::HeightSensor::USE_SINGLE_SHOT ? "single-shot" :
                                                          "continuous");
 
-  // init() can return true after a transient I2C error even though continuous
-  // ranging never started. Require an actual sensor update before reporting
-  // that this module is ready.
   bool rangingStarted = false;
   for (uint8_t attempt = 0; attempt < STARTUP_SAMPLE_ATTEMPTS; ++attempt) {
     if (!Config::HeightSensor::USE_SINGLE_SHOT) {
@@ -352,18 +302,13 @@ bool begin() {
       sensor.read();
     }
     const uint16_t startupDistance = sensor.ranging_data.range_mm;
-    // At boot the platform is empty, so the first real return can be the
-    // floor/background around 1.9 m.  Accept that as proof that ranging is
-    // alive; the stricter 80..1200 mm head window is applied only by
-    // readDistanceMm() during an actual height scan.
+
     const bool plausibleStartupDistance = startupDistance >= 40 &&
                                           startupDistance <= 4000;
     const bool usableStartupStatus =
         sensor.ranging_data.range_status != VL53L1X::None &&
         sensor.ranging_data.range_status != VL53L1X::HardwareFail;
-    // Do not call the sensor Ready merely because a register transaction
-    // completed.  This module can return a syntactically valid status with
-    // raw=0 or raw=64351 while its ranging engine is still recovering.
+
     if (!sensor.timeoutOccurred() && !sensor.communicationError() &&
         sensor.last_status == 0 && plausibleStartupDistance &&
         usableStartupStatus) {
@@ -392,9 +337,6 @@ bool activeSessionHealthy() {
     return false;
   }
 
-  // A single fresh frame is enough to prove that the existing continuous
-  // session and I2C link are alive. Optical statuses such as SignalFail are
-  // acceptable here because this is a communication check, not a height.
   for (uint8_t attempt = 0; attempt < 2; ++attempt) {
     if (Config::HeightSensor::USE_SINGLE_SHOT) {
       sensor.readSingle();
@@ -445,10 +387,6 @@ bool readDistanceMm(uint16_t &distanceMm) {
     return false;
   }
 
-  // In single-shot mode an I2C error invalidates the whole shot. Do not read
-  // the same frame again: discard it and arm XSHUT recovery for the next
-  // sample. A timeout without a bus error may receive one retry because the
-  // sensor can simply be late asserting data-ready.
   bool readOk = false;
   bool communicationFailureThisRead = false;
   uint32_t retryEvents = 0;
@@ -504,9 +442,7 @@ bool readDistanceMm(uint16_t &distanceMm) {
       sensor.ranging_data.peak_signal_count_rate_MCPS;
   const float frameAmbientMCPS =
       sensor.ranging_data.ambient_count_rate_MCPS;
-  // This installed module sometimes repeats its stream counter even when the
-  // range and signal change. Only an identical result with the same counter
-  // is strong enough evidence that the interrupt latched an old frame.
+
   if (hasLastFrameStreamCount && streamCount == lastFrameStreamCount &&
       distanceMm == lastFrameDistanceMm &&
       frameSignalMCPS == lastFrameSignalMCPS &&
@@ -531,9 +467,7 @@ bool readDistanceMm(uint16_t &distanceMm) {
       !phaseCheckCandidate && !recoverableHeadCandidate) {
     Serial.printf("[VL53L1X] Invalid range: %s\n",
                   VL53L1X::rangeStatusToString(sensor.ranging_data.range_status));
-    // A signal-fail value can contain the previous measurement (for example
-    // the repeated 565 mm seen on this unit). Never use it for a height value;
-    // force the recovery path to obtain a fresh, valid range instead.
+
     return false;
   }
 
@@ -551,9 +485,6 @@ bool readDistanceMm(uint16_t &distanceMm) {
                   sensor.ranging_data.peak_signal_count_rate_MCPS);
   }
 
-  // A 1 mm result is a stale/invalid register value on this module, not a
-  // possible head distance. Log occasional out-of-window ranges so a missed
-  // head can be distinguished from weak signal or bus loss.
   if (distanceMm < 80 || distanceMm > 1200) {
     static uint32_t lastOutsideLogAt = 0;
     if (millis() - lastOutsideLogAt >= 250) {
@@ -576,9 +507,6 @@ bool readHeightCm(float &heightCm) {
     return false;
   }
 
-  // Keep all valid frames from the scan. The first valid frames can be a
-  // farther shoulder/background return; selecting the nearest stable cluster
-  // later gives the head a chance to win when it appears after those frames.
   HeightSample samples[Config::HeightSensor::MAX_SAMPLE_ATTEMPTS];
   uint8_t validCount = 0;
   uint8_t communicationFailures = 0;
@@ -599,9 +527,7 @@ bool readHeightCm(float &heightCm) {
   bool earlyStableCluster = false;
   bool interruptedByCommunication = false;
   const uint32_t startedAt = millis();
-  const uint16_t acceptedHeadMaxDistanceMm =
-      extendedDistanceRangeActive ? DIAGNOSTIC_MAX_DISTANCE_MM
-                                  : SINGLE_HEAD_MAX_DISTANCE_MM;
+  const uint16_t acceptedHeadMaxDistanceMm = SINGLE_HEAD_MAX_DISTANCE_MM;
 
   for (uint8_t recovery = 0;
        recovery <= MEASUREMENT_RECOVERY_ATTEMPTS &&
@@ -610,9 +536,7 @@ bool readHeightCm(float &heightCm) {
     bool communicationFailureSeen = false;
 
     if (!initialized) {
-      // A new ranging session can have a different target/ROI state. Never
-      // combine samples from before a communication failure with samples
-      // collected after reinitializing the sensor.
+
       if (validCount > 0) {
         Serial.printf("[VL53L1X] Discarding %u samples from the interrupted session\n",
                       validCount);
@@ -686,10 +610,7 @@ bool readHeightCm(float &heightCm) {
       const bool signalFailCandidate =
           isRecoverableHeadStatus(sensor.ranging_data.range_status,
                                   distanceMm);
-      // The VL53L1X library reports a successful measurement with a
-      // "no wrap check fail" status on some targets/ROIs. It is still a
-      // usable range result; rejecting it here made shorter people appear as
-      // valid=0/7 even though the sensor had returned data.
+
       const bool acceptedRangeStatus =
           sensor.ranging_data.range_status == VL53L1X::RangeValid ||
           sensor.ranging_data.range_status ==
@@ -785,10 +706,6 @@ bool readHeightCm(float &heightCm) {
       break;
     }
 
-    // An optical lock-up can return syntactically valid frames with absurd
-    // distances without incrementing the I2C communication counter. Force one
-    // clean reinitialization so the next recovery pass can obtain a fresh
-    // ranging session instead of repeating the same corrupt register values.
     if (!communicationFailureSeen && validCount == 0 &&
         (distancesOutsideWindow >= 6 || opticalFailures >= 6) &&
         recovery < MEASUREMENT_RECOVERY_ATTEMPTS) {
@@ -817,9 +734,7 @@ bool readHeightCm(float &heightCm) {
     Serial.println("[VL53L1X] Sensor still offline at end of scan; queue not sent");
     return false;
   }
-  // Never combine samples collected before a bus error with a later session.
-  // Even a tight-looking cluster may contain a latched frame from the failed
-  // transaction, so the whole interrupted scan is rejected.
+
   if (!initialized && interruptedByCommunication) {
     lastMeasurementFailure = FailureCause::Communication;
     Serial.println("[VL53L1X] Discarding interrupted scan after I2C failure; no height accepted");
@@ -833,9 +748,7 @@ bool readHeightCm(float &heightCm) {
         totalRetryReads > 255 ? 255 : totalRetryReads);
     lastScanStats.weakSignalSamples = weakSignalSamples;
     lastScanStats.phaseCheckSamples = phaseCheckSamples;
-    // Recovered I2C retries warn of a noisy bus, but do not by themselves
-    // prove the ranging session is offline. Retry the target in this session
-    // unless the driver actually marked it unavailable.
+
     lastMeasurementFailure =
         initialized ? FailureCause::Target : FailureCause::Communication;
     Serial.printf("[VL53L1X] Quality reject: valid=%u (need >=%u, attempts<=%u) retryReads=%u weakSignal=%u I2Cfail=%u optical=%u hardware=%u outside=%u lastSignal=%.2f ambient=%.2f MCPS\n",
@@ -848,9 +761,6 @@ bool readHeightCm(float &heightCm) {
     return false;
   }
 
-  // Never turn a single strong-looking frame into a clinical height. A
-  // torso/floor return can have high signal and was previously accepted as
-  // a 147 cm "single-head fallback". Require a real small cluster first.
   if (validCount < Config::HeightSensor::MIN_HEAD_CLUSTER_SAMPLES &&
       strongSingleHeadSamples >= Config::HeightSensor::MIN_HEAD_CLUSTER_SAMPLES &&
       strongSingleHeadMaxHeight - strongSingleHeadMinHeight <=
@@ -876,11 +786,6 @@ bool readHeightCm(float &heightCm) {
     return true;
   }
 
-  // A shorter person's head can appear only intermittently while the ROI
-  // keeps returning a very stable torso/background distance (for example
-  // 369 mm head versus 493-501 mm body). Prefer the tight, strong head band
-  // whenever it is internally consistent, even if the background has more
-  // frames; otherwise the nearest-cluster-by-count logic reports ~148 cm.
   if (strongSingleHeadSamples >= Config::HeightSensor::MIN_HEAD_CLUSTER_SAMPLES &&
       strongSingleHeadMaxHeight - strongSingleHeadMinHeight <=
           Config::HeightSensor::MAX_SAMPLE_SPAN_CM) {
@@ -918,10 +823,6 @@ bool readHeightCm(float &heightCm) {
     samples[j] = value;
   }
 
-  // The sorted list may contain more than one target: a shoulder/background
-  // return followed by the actual head return. Select the highest (nearest)
-  // contiguous stable cluster instead of taking the median of every frame.
-  // Height is mount-height minus range, so the head is the larger height.
   int bestStart = -1;
   int bestEnd = -1;
   float bestMedianHeight = -INFINITY;
@@ -975,11 +876,6 @@ bool readHeightCm(float &heightCm) {
   const float medianSignalMCPS = medianOf(signals, selectedCount);
   const float medianAmbientMCPS = medianOf(ambients, selectedCount);
 
-  // A stable cluster is not automatically the top of the head. In the
-  // latest failure the sensor saw a very stable object at 662--676 mm and
-  // would otherwise have printed a convincing but false 131 cm height.
-  // Reject clusters outside the installation's plausible head-distance band
-  // so the caller retries/rejects instead of printing a wrong measurement.
   if (!isfinite(medianDistanceMm) ||
       medianDistanceMm < SINGLE_HEAD_MIN_DISTANCE_MM ||
       medianDistanceMm > acceptedHeadMaxDistanceMm) {
@@ -1016,8 +912,6 @@ bool readHeightCm(float &heightCm) {
                   q3 - q1);
   }
 
-  // Accept only readings near the median. A trimmed mean of four samples can
-  // still include a single shoulder/background hit and print a false height.
   const float median = heights[selectedCount / 2];
   float sum = 0.0f;
   uint8_t stableCount = 0;
@@ -1049,125 +943,7 @@ bool readHeightCm(float &heightCm) {
   return true;
 }
 
-bool readHeightCmMultiRoi(float &heightCm) {
-  if (!initialized && !begin()) {
-    lastMeasurementFailure = FailureCause::Communication;
-    return false;
-  }
-
-  Serial.println("[VL53L1X] Multi-ROI quality scan: 16x16 + centered 12x12");
-  if ((currentRoiWidth != Config::HeightSensor::FULL_ROI_WIDTH ||
-       currentRoiHeight != Config::HeightSensor::FULL_ROI_HEIGHT) &&
-      !setRoiAndDiscard(Config::HeightSensor::FULL_ROI_WIDTH,
-                        Config::HeightSensor::FULL_ROI_HEIGHT)) {
-    lastMeasurementFailure = FailureCause::Communication;
-    Serial.println("[VL53L1X] Quality reject: could not prepare 16x16 ROI");
-    return false;
-  }
-
-  float fullHeightCm = 0.0f;
-  const bool fullOk = readHeightCm(fullHeightCm);
-  const FailureCause fullFailure = lastMeasurementFailure;
-  const ScanStats fullStats = lastScanStats;
-
-  bool narrowOk = setRoiAndDiscard(12, 12);
-  FailureCause narrowFailure =
-      narrowOk ? FailureCause::None : FailureCause::Communication;
-  float narrowHeightCm = 0.0f;
-  ScanStats narrowStats;
-  if (narrowOk) {
-    narrowOk = readHeightCm(narrowHeightCm);
-    narrowFailure = lastMeasurementFailure;
-    narrowStats = lastScanStats;
-    narrowOk = narrowOk && initialized && currentRoiWidth == 12 &&
-               currentRoiHeight == 12;
-    if (!narrowOk && narrowFailure == FailureCause::None) {
-      narrowFailure = FailureCause::Communication;
-    }
-  }
-
-  // A communication failure in the secondary ROI must not delay the already
-  // validated primary measurement. Recover the sensor after the queue path
-  // finishes instead of blocking the person on another I2C initialization.
-  const bool primaryFallback =
-      fullOk && fullStats.phaseCheckSamples == 0 && !narrowOk &&
-      narrowFailure == FailureCause::Communication;
-  if (primaryFallback) {
-    Serial.println("[VL53L1X] Secondary ROI lost communication; sensor recovery deferred");
-  }
-
-  // Keep the running 12x12 session. Only another explicit multi-ROI
-  // diagnostic will switch back to 16x16. A full init after every scan
-  // previously added dozens of I2C transfers and could fail after a valid
-  // height was measured.
-
-  if (!fullOk) {
-    // This module can fail the phase check across the full field of view
-    // while producing a clean, stable centered 12x12 range in Long mode.
-    // Use that independent scan only when the primary ROI provided no usable
-    // samples, so conflicting measurements cannot be silently overridden.
-    if (narrowOk && fullStats.validSamples == 0 &&
-        narrowStats.phaseCheckSamples == 0) {
-      heightCm = narrowHeightCm;
-      lastMeasurementFailure = FailureCause::None;
-      Serial.printf("[VL53L1X] Fallback: 16x16 had no valid samples; using validated 12x12 height=%.1f cm\n",
-                    heightCm);
-      return true;
-    }
-    lastMeasurementFailure = fullFailure;
-    Serial.printf("[VL53L1X] Quality reject: ROI16=%s ROI12=%s\n",
-                  fullOk ? "PASS" : "FAIL",
-                  narrowOk ? "PASS" : "FAIL");
-    return false;
-  }
-
-  if (!narrowOk) {
-    if (!primaryFallback) {
-      lastMeasurementFailure = narrowFailure;
-      Serial.println("[VL53L1X] Quality reject: 12x12 check failed; primary result requires secondary confirmation");
-      return false;
-    }
-    heightCm = fullHeightCm;
-    lastMeasurementFailure = FailureCause::None;
-    Serial.printf("[VL53L1X] Fallback: 12x12 communication failed; using validated 16x16 height=%.1f cm\n",
-                  heightCm);
-    return true;
-  }
-
-  const float roiDistanceDifference =
-      fabsf(fullStats.medianDistanceMm - narrowStats.medianDistanceMm);
-  Serial.printf("[VL53L1X] ROI comparison: 16x16 %.0fmm / %.1fcm, 12x12 %.0fmm / %.1fcm, delta=%.0fmm\n",
-                fullStats.medianDistanceMm, fullHeightCm,
-                narrowStats.medianDistanceMm, narrowHeightCm,
-                roiDistanceDifference);
-  if (roiDistanceDifference >
-      Config::HeightSensor::MAX_ROI_DISTANCE_DIFFERENCE_MM) {
-    lastMeasurementFailure = FailureCause::Target;
-    Serial.printf("[VL53L1X] Quality reject: ROI distance delta %.0fmm exceeds %umm\n",
-                  roiDistanceDifference,
-                  Config::HeightSensor::MAX_ROI_DISTANCE_DIFFERENCE_MM);
-    return false;
-  }
-
-  // This diagnostic reports the full-field value after the ROI comparison.
-  heightCm = fullHeightCm;
-  lastMeasurementFailure = FailureCause::None;
-  if (fullStats.phaseCheckSamples > 0 || narrowStats.phaseCheckSamples > 0) {
-    Serial.printf("[VL53L1X] Warning: accepted phase-check candidates 16x16=%u 12x12=%u after stable cross-ROI agreement\n",
-                  fullStats.phaseCheckSamples,
-                  narrowStats.phaseCheckSamples);
-  }
-  Serial.printf("[VL53L1X] Multi-ROI quality PASS; accepted height=%.1f cm\n",
-                heightCm);
-  return true;
-}
-
-bool readHeightCmRoi12Diagnostic(float &heightCm) {
-  Serial.println("[HEIGHTTEST12] Trying centered 12x12 ROI; NO queue/print");
-  return readHeightCmFixedRoi(heightCm);
-}
-
-bool readHeightCmFixedRoi(float &heightCm, bool extendedDistanceRange) {
+bool readHeightCmFixedRoi(float &heightCm) {
   if (!initialized && !begin()) {
     lastMeasurementFailure = FailureCause::Communication;
     return false;
@@ -1179,10 +955,7 @@ bool readHeightCmFixedRoi(float &heightCm, bool extendedDistanceRange) {
     lastMeasurementFailure = FailureCause::Communication;
     return false;
   }
-  const bool previousExtendedRange = extendedDistanceRangeActive;
-  extendedDistanceRangeActive = extendedDistanceRange;
   const bool measured = readHeightCm(heightCm);
-  extendedDistanceRangeActive = previousExtendedRange;
   if (currentRoiWidth != Config::HeightSensor::ROI_WIDTH ||
       currentRoiHeight != Config::HeightSensor::ROI_HEIGHT) {
     lastMeasurementFailure = FailureCause::Communication;
@@ -1191,4 +964,4 @@ bool readHeightCmFixedRoi(float &heightCm, bool extendedDistanceRange) {
   return measured;
 }
 
-}  // namespace VL53L1XDevice
+}
